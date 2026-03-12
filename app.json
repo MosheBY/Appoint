@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "BarberApp",
+    "slug": "barber-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.barberapp.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a2e"
+      },
+      "package": "com.barberapp.app"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#c9a84c"
+        }
+      ]
+    ],
+    "scheme": "barberapp"
+  }
+}
