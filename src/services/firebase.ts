@@ -1,5 +1,7 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+// @ts-expect-error Metro resolves firebase/auth to the RN bundle which exports getReactNativePersistence
+import { initializeAuth, getAuth, getReactNativePersistence } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -11,10 +13,26 @@ const firebaseConfig = {
   appId: "1:288101421313:web:076c612bc76aa2ce470b00",
 };
 
-const app = initializeApp(firebaseConfig);
+console.log('[firebase] getReactNativePersistence type:', typeof getReactNativePersistence);
+console.log('[firebase] AsyncStorage:', !!AsyncStorage);
 
-export const auth = getAuth(app);
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
+const { _getProvider } = require('firebase/app');
+const authProvider = _getProvider(app, 'auth');
+console.log('[firebase] auth component set?', (authProvider as any).component != null);
+
+let auth;
+try {
+  const persistence = getReactNativePersistence(AsyncStorage);
+  auth = initializeAuth(app, { persistence });
+  console.log('[firebase] initializeAuth success');
+} catch (e) {
+  console.log('[firebase] initializeAuth error:', e);
+  auth = getAuth(app);
+}
+
+export { auth };
 export const db = getFirestore(app);
 
 export default app;

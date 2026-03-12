@@ -11,7 +11,7 @@ import { ServiceType, createAppointment, getAvailableSlots } from '../../service
 import { scheduleLocalReminder } from '../../services/notificationService';
 
 // *** שנה לפי ה-UID של הספר שלך ב-Firebase ***
-const BARBER_ID = 'YOUR_BARBER_UID';
+const BARBER_ID = 'ABGss0WKwCRTlJwEeTAbbCYHMLD2';
 
 interface Props {
   service: ServiceType;

@@ -3,7 +3,18 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(npx expo:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/firebase/auth -name *.js -maxdepth 2)",
+      "Bash(grep -r getReactNativePersistence c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/@firebase/auth/dist --include=*.d.ts -l)",
+      "Bash(node -e \"const p = require\\(''c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/metro/package.json''\\); console.log\\(p.version\\)\")",
+      "Bash(find c:/Users/yakob/OneDrive/מסמכים/Appo/src -name *.ts -o -name *.tsx)",
+      "Bash(node -e \"const p = require\\(''''c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/@firebase/app/package.json''''\\); console.log\\(JSON.stringify\\(p.exports[''''.''''], null, 2\\)\\)\")",
+      "Bash(head -20 grep -n \"conditionsByPlatform\\\\|conditionNames\\\\|react-native\" c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/metro-config/src/defaults/index.js)",
+      "Bash(node -e \"const p = require\\(''c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/@firebase/app/package.json''\\); console.log\\(''main:'', p.main, ''browser:'', p.browser, ''module:'', p.module, ''react-native:'', p[''react-native'']\\)\")",
+      "Bash(node -e \"const p = require\\(''c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/@firebase/auth/package.json''\\); console.log\\(''main:'', p.main, ''browser:'', p.browser, ''module:'', p.module, ''react-native:'', p[''react-native'']\\)\")",
+      "Bash(node -e \"const p = require\\(''c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/@firebase/component/package.json''\\); console.log\\(''main:'', p.main, ''browser:'', p.browser, ''module:'', p.module, ''react-native:'', p[''react-native'']\\)\")",
+      "Bash(node -e \":*)",
+      "Bash(node -e \"const p = require\\(''c:/Users/yakob/OneDrive/מסמכים/Appo/node_modules/@firebase/app/package.json''\\); console.log\\(''react-native:'', p[''react-native'']\\); const exp = p.exports; console.log\\(''exports[.]:'', JSON.stringify\\(exp[''.''], null, 2\\)\\)\")"
     ]
   }
 }

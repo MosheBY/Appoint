@@ -19,9 +19,9 @@ export default function LoginScreen({ navigation }: any) {
 
   // *** החלף עם ה-Client IDs שלך מ-Google Cloud Console ***
   const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
-    iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-    webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+    androidClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
+    iosClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
+    webClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
   });
 
   React.useEffect(() => {

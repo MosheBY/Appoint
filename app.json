@@ -21,7 +21,8 @@
         {
           "color": "#c9a84c"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "scheme": "barberapp"
   }
