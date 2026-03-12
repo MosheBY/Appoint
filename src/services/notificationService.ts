@@ -72,7 +72,7 @@ export const scheduleLocalReminder = async (
       body: `יש לך תור ל${serviceName} בעוד שעה (${time})`,
       data: { appointmentId },
     },
-    trigger: { date: reminderDate },
+    trigger: reminderDate,
   });
 
   return id;
