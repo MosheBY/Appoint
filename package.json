@@ -1,7 +1,7 @@
 {
   "name": "barber-app",
   "version": "1.0.0",
-  "main": "App.tsx",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -31,6 +31,7 @@
   "devDependencies": {
     "@babel/core": "^7.24.0",
     "@types/react": "~19.1.10",
+    "expo-module-scripts": "^5.0.8",
     "typescript": "^5.3.3"
   },
   "private": true

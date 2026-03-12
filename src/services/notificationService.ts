@@ -5,7 +5,8 @@ import { Platform } from 'react-native';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -72,7 +73,10 @@ export const scheduleLocalReminder = async (
       body: `יש לך תור ל${serviceName} בעוד שעה (${time})`,
       data: { appointmentId },
     },
-    trigger: { date: reminderDate },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: reminderDate,
+    },
   });
 
   return id;
