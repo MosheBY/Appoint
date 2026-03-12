@@ -22,15 +22,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const profile = await getUserProfile(firebaseUser.uid);
-        setUser(profile);
-        const token = await registerForPushNotifications();
-        if (token && profile) await updatePushToken(profile.uid, token);
-      } else {
+      try {
+        if (firebaseUser) {
+          const profile = await getUserProfile(firebaseUser.uid);
+          setUser(profile);
+
+          if (profile) {
+            const token = await registerForPushNotifications();
+            if (token) {
+              await updatePushToken(profile.uid, token);
+            }
+          }
+        } else {
+          setUser(null);
+        }
+      } catch (error) {
+        console.error('Failed to restore auth session', error);
         setUser(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
     return unsub;
   }, []);

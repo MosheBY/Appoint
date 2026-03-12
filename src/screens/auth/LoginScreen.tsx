@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { loginWithEmail, loginWithGoogle } from '../../services/authService';
 import { useAuth } from '../../context/AuthContext';
@@ -16,6 +17,7 @@ export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const isExpoGo = Constants.executionEnvironment === 'storeClient';
 
   // *** החלף עם ה-Client IDs שלך מ-Google Cloud Console ***
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -41,6 +43,18 @@ export default function LoginScreen({ navigation }: any) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGooglePress = async () => {
+    if (isExpoGo) {
+      Alert.alert(
+        'Google login לא זמין ב-Expo Go',
+        'כדי להתחבר עם Google צריך Development Build ו-Client IDs נפרדים ל-iOS, Android ו-Web ב-Google Cloud/Firebase.'
+      );
+      return;
+    }
+
+    await promptAsync();
   };
 
   const handleEmailLogin = async () => {
@@ -95,7 +109,7 @@ export default function LoginScreen({ navigation }: any) {
 
         <TouchableOpacity
           style={styles.googleButton}
-          onPress={() => promptAsync()}
+          onPress={handleGooglePress}
           disabled={!request || loading}
         >
           <Ionicons name="logo-google" size={20} color="#fff" />
