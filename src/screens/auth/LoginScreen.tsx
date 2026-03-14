@@ -23,7 +23,8 @@ export default function LoginScreen({ navigation }: any) {
   const [request, response, promptAsync] = Google.useAuthRequest({
     androidClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
     iosClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
-    webClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
+    webClientId: '288101421313-j6q23j0k2lshdi1i0a3u9e2ri92qgjp8.apps.googleusercontent.com',
+    //288101421313-j6q23j0k2lshdi1i0a3u9e2ri92qgjp8.apps.googleusercontent.com
   });
 
   React.useEffect(() => {

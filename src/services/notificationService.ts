@@ -15,6 +15,7 @@ Notifications.setNotificationHandler({
 export const registerForPushNotifications = async (): Promise<string | null> => {
   try {
     if (!Device.isDevice) return null;
+    if (Constants.executionEnvironment === 'storeClient') return null;
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -26,8 +27,15 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
     if (finalStatus !== 'granted') return null;
 
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    const projectId =
+      Constants.easConfig?.projectId ??
+      Constants.expoConfig?.extra?.eas?.projectId;
+    const isValidProjectId =
+      typeof projectId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId);
+    const token = (await Notifications.getExpoPushTokenAsync(
+      isValidProjectId ? { projectId } : {}
+    )).data;
 
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -40,7 +48,7 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
     return token;
   } catch (error) {
-    console.warn('Push notification registration skipped', error);
+    console.warn('Push notification registration skipped');
     return null;
   }
 };

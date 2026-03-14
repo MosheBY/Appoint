@@ -1,6 +1,15 @@
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc,
-  getDocs, getDoc, query, where, orderBy, Timestamp, setDoc,
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDocs,
+  getDoc,
+  query,
+  where,
+  Timestamp,
+  setDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { sendPushNotification } from './notificationService';
@@ -24,20 +33,31 @@ export interface Appointment {
   createdAt: any;
 }
 
+const compareAppointments = (a: Appointment, b: Appointment) => {
+  const byDate = a.date.localeCompare(b.date);
+  if (byDate !== 0) return byDate;
+  return a.time.localeCompare(b.time);
+};
+
 export const createAppointment = async (data: Omit<Appointment, 'id'>): Promise<string> => {
   const ref = await addDoc(collection(db, 'appointments'), {
     ...data,
     createdAt: Timestamp.now(),
   });
 
-  const barber = await getUserProfile(data.barberId);
-  if (barber?.expoPushToken) {
-    await sendPushNotification(
-      barber.expoPushToken,
-      'תור חדש!',
-      `${data.customerName} קבע תור ל${data.date} בשעה ${data.time}`
-    );
+  try {
+    const barber = await getUserProfile(data.barberId);
+    if (barber?.expoPushToken) {
+      await sendPushNotification(
+        barber.expoPushToken,
+        'תור חדש!',
+        `${data.customerName} קבע תור ל${data.date} בשעה ${data.time}`
+      );
+    }
+  } catch (error) {
+    console.warn('Failed to send push notification to barber', error);
   }
+
   return ref.id;
 };
 
@@ -48,46 +68,58 @@ export const updateAppointment = async (
 ): Promise<void> => {
   await updateDoc(doc(db, 'appointments', id), changes);
 
-  if (notifyCustomer) {
+  if (!notifyCustomer) return;
+
+  try {
     const snap = await getDoc(doc(db, 'appointments', id));
+    if (!snap.exists()) return;
+
     const appt = snap.data() as Appointment;
     const customer = await getUserProfile(appt.customerId);
-    if (customer?.expoPushToken) {
-      let message = '';
-      if (changes.status === 'confirmed') message = `התור שלך ל${appt.date} אושר!`;
-      else if (changes.status === 'cancelled') message = `התור שלך ל${appt.date} בוטל.`;
-      else message = `פרטי התור שלך עודכנו (${appt.date} ${appt.time})`;
-      if (message) await sendPushNotification(customer.expoPushToken, 'עדכון תור', message);
+    if (!customer?.expoPushToken) return;
+
+    let message = '';
+    if (changes.status === 'confirmed') message = `התור שלך ל${appt.date} אושר!`;
+    else if (changes.status === 'cancelled') message = `התור שלך ל${appt.date} בוטל.`;
+    else message = `פרטי התור שלך עודכנו (${appt.date} ${appt.time})`;
+
+    if (message) {
+      await sendPushNotification(customer.expoPushToken, 'עדכון תור', message);
     }
+  } catch (error) {
+    console.warn('Failed to send push notification to customer', error);
   }
 };
 
 export const deleteAppointment = async (id: string, notifyCustomer = true): Promise<void> => {
   if (notifyCustomer) {
-    const snap = await getDoc(doc(db, 'appointments', id));
-    if (snap.exists()) {
-      const appt = snap.data() as Appointment;
-      const customer = await getUserProfile(appt.customerId);
-      if (customer?.expoPushToken) {
-        await sendPushNotification(
-          customer.expoPushToken,
-          'תור בוטל',
-          `התור שלך ל${appt.date} בשעה ${appt.time} בוטל.`
-        );
+    try {
+      const snap = await getDoc(doc(db, 'appointments', id));
+      if (snap.exists()) {
+        const appt = snap.data() as Appointment;
+        const customer = await getUserProfile(appt.customerId);
+        if (customer?.expoPushToken) {
+          await sendPushNotification(
+            customer.expoPushToken,
+            'תור בוטל',
+            `התור שלך ל${appt.date} בשעה ${appt.time} בוטל.`
+          );
+        }
       }
+    } catch (error) {
+      console.warn('Failed to send cancellation push notification', error);
     }
   }
+
   await deleteDoc(doc(db, 'appointments', id));
 };
 
 export const getCustomerAppointments = async (customerId: string): Promise<Appointment[]> => {
-  const q = query(
-    collection(db, 'appointments'),
-    where('customerId', '==', customerId),
-    orderBy('date', 'desc')
-  );
+  const q = query(collection(db, 'appointments'), where('customerId', '==', customerId));
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Appointment));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Appointment))
+    .sort((a, b) => compareAppointments(b, a));
 };
 
 export const getBarberAppointments = async (
@@ -98,16 +130,14 @@ export const getBarberAppointments = async (
     ? query(
         collection(db, 'appointments'),
         where('barberId', '==', barberId),
-        where('date', '==', dateFilter),
-        orderBy('time', 'asc')
+        where('date', '==', dateFilter)
       )
-    : query(
-        collection(db, 'appointments'),
-        where('barberId', '==', barberId),
-        orderBy('date', 'asc')
-      );
+    : query(collection(db, 'appointments'), where('barberId', '==', barberId));
+
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Appointment));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Appointment))
+    .sort(compareAppointments);
 };
 
 export const getAppointmentsByCustomer = async (
@@ -117,11 +147,12 @@ export const getAppointmentsByCustomer = async (
   const q = query(
     collection(db, 'appointments'),
     where('barberId', '==', barberId),
-    where('customerId', '==', customerId),
-    orderBy('date', 'desc')
+    where('customerId', '==', customerId)
   );
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Appointment));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Appointment))
+    .sort((a, b) => compareAppointments(b, a));
 };
 
 export const getAvailableSlots = async (
@@ -130,7 +161,7 @@ export const getAvailableSlots = async (
 ): Promise<string[]> => {
   const availability = await getBarberAvailability(barberId);
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const dayKey = days[new Date(date).getDay()];
+  const dayKey = days[new Date(date + 'T12:00:00').getDay()];
   const dayConfig = availability?.schedule?.[dayKey];
 
   if (!dayConfig?.isOpen) return [];
@@ -141,7 +172,7 @@ export const getAvailableSlots = async (
   const blockedSlots = availability?.blockedSlots?.[date] ?? [];
 
   const existing = await getBarberAppointments(barberId, date);
-  const bookedTimes = existing.filter(a => a.status !== 'cancelled').map(a => a.time);
+  const bookedTimes = existing.filter((a) => a.status !== 'cancelled').map((a) => a.time);
 
   const slots: string[] = [];
   let [h, m] = start.split(':').map(Number);
@@ -149,10 +180,16 @@ export const getAvailableSlots = async (
 
   while (h < endH || (h === endH && m < endM)) {
     const slot = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    if (!bookedTimes.includes(slot) && !blockedSlots.includes(slot)) slots.push(slot);
+    if (!bookedTimes.includes(slot) && !blockedSlots.includes(slot)) {
+      slots.push(slot);
+    }
     m += 30;
-    if (m >= 60) { h++; m -= 60; }
+    if (m >= 60) {
+      h++;
+      m -= 60;
+    }
   }
+
   return slots;
 };
 

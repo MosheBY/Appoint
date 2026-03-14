@@ -5,7 +5,7 @@ import {
   GoogleAuthProvider,
   signInWithCredential,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 export type UserRole = 'customer' | 'barber';
@@ -68,6 +68,12 @@ export const loginWithGoogle = async (idToken: string): Promise<UserProfile> => 
 export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
   const snap = await getDoc(doc(db, 'users', uid));
   return snap.exists() ? (snap.data() as UserProfile) : null;
+};
+
+export const getBarbers = async (): Promise<UserProfile[]> => {
+  const q = query(collection(db, 'users'), where('role', '==', 'barber'));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as UserProfile);
 };
 
 export const logout = () => signOut(auth);

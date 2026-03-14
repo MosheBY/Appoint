@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { logout } from '../../services/authService';
+import { getBarbers, logout, UserProfile } from '../../services/authService';
 import BookingScreen from './BookingScreen';
 import { ServiceType } from '../../services/appointmentService';
 
@@ -15,16 +23,49 @@ const SERVICES: { type: ServiceType; icon: string; price: number; duration: stri
 export default function HomeScreen() {
   const { user, setUser } = useAuth();
   const [selectedService, setSelectedService] = useState<ServiceType | null>(null);
+  const [barber, setBarber] = useState<UserProfile | null>(null);
+  const [loadingBarber, setLoadingBarber] = useState(true);
+
+  useEffect(() => {
+    getBarbers()
+      .then((barbers) => setBarber(barbers[0] ?? null))
+      .catch((error) => {
+        console.error('getBarbers error:', error);
+        setBarber(null);
+      })
+      .finally(() => setLoadingBarber(false));
+  }, []);
 
   const handleLogout = () => {
-    Alert.alert('יציאה', 'האם אתה בטוח שרוצה להתנתק?', [
+    Alert.alert('יציאה', 'האם אתה בטוח שברצונך להתנתק?', [
       { text: 'ביטול', style: 'cancel' },
-      { text: 'יציאה', style: 'destructive', onPress: async () => { await logout(); setUser(null); } },
+      {
+        text: 'יציאה',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          setUser(null);
+        },
+      },
     ]);
   };
 
-  if (selectedService) {
-    return <BookingScreen service={selectedService} onBack={() => setSelectedService(null)} />;
+  if (selectedService && barber) {
+    return (
+      <BookingScreen
+        barberId={barber.uid}
+        service={selectedService}
+        onBack={() => setSelectedService(null)}
+      />
+    );
+  }
+
+  if (loadingBarber) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#c9a84c" />
+      </View>
+    );
   }
 
   return (
@@ -38,19 +79,26 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.greeting}>שלום, {user?.name} 👋</Text>
+        <Text style={styles.greeting}>שלום, {user?.name}</Text>
         <Text style={styles.subtitle}>בחר שירות לקביעת תור</Text>
 
-        {SERVICES.map((s) => (
-          <TouchableOpacity key={s.type} style={styles.card} onPress={() => setSelectedService(s.type)}>
+        {!barber && <Text style={styles.emptyState}>לא נמצא ספר פעיל במערכת.</Text>}
+
+        {SERVICES.map((service) => (
+          <TouchableOpacity
+            key={service.type}
+            style={[styles.card, !barber && styles.cardDisabled]}
+            onPress={() => setSelectedService(service.type)}
+            disabled={!barber}
+          >
             <View style={styles.cardIcon}>
-              <Ionicons name={s.icon as any} size={28} color="#c9a84c" />
+              <Ionicons name={service.icon as any} size={28} color="#c9a84c" />
             </View>
             <View style={styles.cardInfo}>
-              <Text style={styles.cardTitle}>{s.type}</Text>
-              <Text style={styles.cardSub}>{s.duration}</Text>
+              <Text style={styles.cardTitle}>{service.type}</Text>
+              <Text style={styles.cardSub}>{service.duration}</Text>
             </View>
-            <Text style={styles.cardPrice}>₪{s.price}</Text>
+            <Text style={styles.cardPrice}>₪{service.price}</Text>
             <Ionicons name="chevron-back" size={20} color="#555" />
           </TouchableOpacity>
         ))}
@@ -61,22 +109,40 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1a2e' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 54, paddingBottom: 16, backgroundColor: '#16213e',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 54,
+    paddingBottom: 16,
+    backgroundColor: '#16213e',
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   content: { padding: 20 },
   greeting: { fontSize: 22, fontWeight: 'bold', color: '#fff', marginBottom: 4 },
   subtitle: { fontSize: 14, color: '#888', marginBottom: 24 },
+  emptyState: { color: '#ef4444', marginBottom: 16, textAlign: 'center' },
   card: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#16213e', borderRadius: 14, padding: 16,
-    marginBottom: 14, borderWidth: 1, borderColor: '#2a2a4a',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16213e',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#2a2a4a',
   },
+  cardDisabled: { opacity: 0.45 },
   cardIcon: {
-    width: 50, height: 50, borderRadius: 25,
-    backgroundColor: '#1a1a3e', justifyContent: 'center', alignItems: 'center', marginRight: 14,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1a1a3e',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
   },
   cardInfo: { flex: 1 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
