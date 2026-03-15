@@ -1,13 +1,23 @@
-import React, { useState } from 'react';
-import { CALENDAR_THEME } from '../../constants';
+import React, { useEffect, useState } from 'react';
+import { CALENDAR_THEME, todayString } from '../../constants';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Alert, ActivityIndicator,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import {
-  updateAppointment, Appointment, AppointmentStatus, ServiceType, getAvailableSlots,
+  updateAppointment,
+  Appointment,
+  AppointmentStatus,
+  ServiceType,
+  getAvailableSlots,
 } from '../../services/appointmentService';
 
 const SERVICES: ServiceType[] = ['תספורת', 'זקן', 'תספורת + זקן'];
@@ -29,13 +39,32 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
   const [slots, setSlots] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayString();
 
-  const handleDateSelect = async (day: any) => {
+  useEffect(() => {
+    if (!date) return;
+
+    getAvailableSlots(original.barberId, date, service)
+      .then((available) => {
+        const nextSlots = [...available];
+        if (date === original.date && !nextSlots.includes(original.time)) {
+          nextSlots.push(original.time);
+          nextSlots.sort();
+        }
+        setSlots(nextSlots);
+      })
+      .catch((error) => {
+        console.error('getAvailableSlots error:', error);
+        setSlots([]);
+      });
+  }, [date, original.barberId, original.date, original.time, service]);
+
+  const handleDateSelect = async (day: { dateString: string }) => {
     setDate(day.dateString);
     setTime('');
     setShowCalendar(false);
-    const available = await getAvailableSlots(original.barberId, day.dateString);
+
+    const available = await getAvailableSlots(original.barberId, day.dateString, service);
     if (day.dateString === original.date && !available.includes(original.time)) {
       available.push(original.time);
       available.sort();
@@ -70,19 +99,35 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.label}>שם לקוח</Text>
         <TextInput
-          style={styles.input} value={customerName} onChangeText={setCustomerName}
-          textAlign="right" placeholderTextColor="#888"
+          style={styles.input}
+          value={customerName}
+          onChangeText={setCustomerName}
+          textAlign="right"
+          placeholderTextColor="#888"
         />
+
+        {!!original.customerPhone && (
+          <>
+            <Text style={styles.label}>טלפון</Text>
+            <TextInput
+              style={styles.input}
+              value={original.customerPhone}
+              editable={false}
+              textAlign="right"
+              placeholderTextColor="#888"
+            />
+          </>
+        )}
 
         <Text style={styles.label}>שירות</Text>
         <View style={styles.optionRow}>
-          {SERVICES.map(s => (
+          {SERVICES.map((item) => (
             <TouchableOpacity
-              key={s}
-              style={[styles.option, service === s && styles.optionActive]}
-              onPress={() => setService(s)}
+              key={item}
+              style={[styles.option, service === item && styles.optionActive]}
+              onPress={() => setService(item)}
             >
-              <Text style={[styles.optionText, service === s && styles.optionTextActive]}>{s}</Text>
+              <Text style={[styles.optionText, service === item && styles.optionTextActive]}>{item}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -104,33 +149,45 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
         <Text style={styles.label}>שעה</Text>
         {slots.length > 0 ? (
           <View style={styles.slotsGrid}>
-            {slots.map(s => (
+            {slots.map((slot) => (
               <TouchableOpacity
-                key={s}
-                style={[styles.slot, time === s && styles.slotActive]}
-                onPress={() => setTime(s)}
+                key={slot}
+                style={[styles.slot, time === slot && styles.slotActive]}
+                onPress={() => setTime(slot)}
               >
-                <Text style={[styles.slotText, time === s && styles.slotTextActive]}>{s}</Text>
+                <Text style={[styles.slotText, time === slot && styles.slotTextActive]}>{slot}</Text>
               </TouchableOpacity>
             ))}
           </View>
         ) : (
           <TextInput
-            style={styles.input} value={time} onChangeText={setTime}
-            placeholder="HH:mm" placeholderTextColor="#888" textAlign="right"
+            style={styles.input}
+            value={time}
+            onChangeText={setTime}
+            placeholder="HH:mm"
+            placeholderTextColor="#888"
+            textAlign="right"
           />
         )}
 
         <Text style={styles.label}>סטטוס</Text>
         <View style={styles.optionRow}>
-          {STATUSES.map(s => (
+          {STATUSES.map((item) => (
             <TouchableOpacity
-              key={s.val}
-              style={[styles.option, status === s.val && { backgroundColor: s.color + '33', borderColor: s.color }]}
-              onPress={() => setStatus(s.val)}
+              key={item.val}
+              style={[
+                styles.option,
+                status === item.val && { backgroundColor: item.color + '33', borderColor: item.color },
+              ]}
+              onPress={() => setStatus(item.val)}
             >
-              <Text style={[styles.optionText, status === s.val && { color: s.color, fontWeight: 'bold' }]}>
-                {s.label}
+              <Text
+                style={[
+                  styles.optionText,
+                  status === item.val && { color: item.color, fontWeight: 'bold' },
+                ]}
+              >
+                {item.label}
               </Text>
             </TouchableOpacity>
           ))}
@@ -138,12 +195,21 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
 
         <Text style={styles.label}>הערות</Text>
         <TextInput
-          style={[styles.input, { height: 80 }]} value={notes} onChangeText={setNotes}
-          multiline textAlign="right" placeholder="הערות לתור..." placeholderTextColor="#888"
+          style={[styles.input, { height: 80 }]}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          textAlign="right"
+          placeholder="הערות לתור..."
+          placeholderTextColor="#888"
         />
 
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-          {saving ? <ActivityIndicator color="#1a1a2e" /> : <Text style={styles.saveBtnText}>שמור שינויים</Text>}
+          {saving ? (
+            <ActivityIndicator color="#1a1a2e" />
+          ) : (
+            <Text style={styles.saveBtnText}>שמור שינויים</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -153,40 +219,68 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1a2e' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 54, paddingBottom: 14, backgroundColor: '#16213e',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 54,
+    paddingBottom: 14,
+    backgroundColor: '#16213e',
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   content: { padding: 16 },
   label: { color: '#c9a84c', fontSize: 13, fontWeight: 'bold', marginBottom: 8, marginTop: 14 },
   input: {
-    backgroundColor: '#16213e', borderRadius: 10, padding: 12,
-    color: '#fff', fontSize: 15, borderWidth: 1, borderColor: '#333',
+    backgroundColor: '#16213e',
+    borderRadius: 10,
+    padding: 12,
+    color: '#fff',
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   optionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   option: {
-    paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: '#16213e', borderRadius: 8, borderWidth: 1, borderColor: '#333',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#16213e',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   optionActive: { backgroundColor: '#c9a84c33', borderColor: '#c9a84c' },
   optionText: { color: '#888', fontSize: 14 },
   optionTextActive: { color: '#c9a84c', fontWeight: 'bold' },
   dateBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#16213e', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#333',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#16213e',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   dateBtnText: { color: '#fff', fontSize: 15 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   slot: {
-    paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: '#16213e', borderRadius: 8, borderWidth: 1, borderColor: '#333',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#16213e',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   slotActive: { backgroundColor: '#c9a84c', borderColor: '#c9a84c' },
   slotText: { color: '#fff', fontSize: 14 },
   slotTextActive: { color: '#1a1a2e', fontWeight: 'bold' },
   saveBtn: {
-    backgroundColor: '#c9a84c', borderRadius: 12, padding: 16,
-    alignItems: 'center', marginTop: 24, marginBottom: 30,
+    backgroundColor: '#c9a84c',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 30,
   },
   saveBtnText: { color: '#1a1a2e', fontWeight: 'bold', fontSize: 16 },
 });

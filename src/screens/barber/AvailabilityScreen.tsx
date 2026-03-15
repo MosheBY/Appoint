@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CALENDAR_THEME } from '../../constants';
+import { CALENDAR_THEME, todayString } from '../../constants';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, TextInput, Alert, ActivityIndicator,
@@ -71,7 +71,7 @@ export default function AvailabilityScreen() {
     return <View style={styles.center}><ActivityIndicator color="#c9a84c" size="large" /></View>;
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayString();
   const markedVacations = vacationDays.reduce((acc: any, d) => {
     acc[d] = { selected: true, selectedColor: '#ef4444' };
     return acc;

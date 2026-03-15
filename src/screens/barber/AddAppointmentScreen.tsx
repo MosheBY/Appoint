@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CALENDAR_THEME } from '../../constants';
+import React, { useEffect, useState } from 'react';
+import { CALENDAR_THEME, todayString } from '../../constants';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, Alert, ActivityIndicator,
@@ -22,13 +22,24 @@ export default function AddAppointmentScreen({ navigation }: any) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [slots, setSlots] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayString();
+
+  useEffect(() => {
+    if (!date || !user) return;
+
+    getAvailableSlots(user.uid, date, service)
+      .then(setSlots)
+      .catch((error) => {
+        console.error('getAvailableSlots error:', error);
+        setSlots([]);
+      });
+  }, [date, service, user]);
 
   const handleDateSelect = async (day: any) => {
     setDate(day.dateString);
     setTime('');
     setShowCalendar(false);
-    const available = await getAvailableSlots(user!.uid, day.dateString);
+    const available = await getAvailableSlots(user!.uid, day.dateString, service);
     setSlots(available);
   };
 

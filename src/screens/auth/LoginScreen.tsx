@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -19,12 +26,10 @@ export default function LoginScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const isExpoGo = Constants.executionEnvironment === 'storeClient';
 
-  // *** החלף עם ה-Client IDs שלך מ-Google Cloud Console ***
   const [request, response, promptAsync] = Google.useAuthRequest({
     androidClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
     iosClientId: '288101421313-6esnmfcn3f843jo2sh3fj12qs4e0o8ar.apps.googleusercontent.com',
     webClientId: '288101421313-j6q23j0k2lshdi1i0a3u9e2ri92qgjp8.apps.googleusercontent.com',
-    //288101421313-j6q23j0k2lshdi1i0a3u9e2ri92qgjp8.apps.googleusercontent.com
   });
 
   React.useEffect(() => {
@@ -34,13 +39,21 @@ export default function LoginScreen({ navigation }: any) {
     }
   }, [response]);
 
+  const showDisabledMessage = () => {
+    Alert.alert('החשבון מושבת', 'מנהל המערכת השבית את החשבון הזה. פנה למנהל כדי להפעיל אותו מחדש.');
+  };
+
   const handleGoogleLogin = async (idToken: string) => {
     setLoading(true);
     try {
       const profile = await loginWithGoogle(idToken);
       setUser(profile);
-    } catch {
-      Alert.alert('שגיאה', 'כניסה עם Google נכשלה');
+    } catch (error) {
+      if (error instanceof Error && error.message === 'USER_DISABLED') {
+        showDisabledMessage();
+      } else {
+        Alert.alert('שגיאה', 'כניסה עם Google נכשלה');
+      }
     } finally {
       setLoading(false);
     }
@@ -59,20 +72,31 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   const handleEmailLogin = async () => {
-    if (!email || !password) { Alert.alert('שגיאה', 'יש למלא מייל וסיסמה'); return; }
+    if (!email || !password) {
+      Alert.alert('שגיאה', 'יש למלא מייל וסיסמה');
+      return;
+    }
+
     setLoading(true);
     try {
       const profile = await loginWithEmail(email, password);
       setUser(profile);
-    } catch {
-      Alert.alert('שגיאה', 'מייל או סיסמה שגויים');
+    } catch (error) {
+      if (error instanceof Error && error.message === 'USER_DISABLED') {
+        showDisabledMessage();
+      } else {
+        Alert.alert('שגיאה', 'מייל או סיסמה שגויים');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.inner}>
         <Ionicons name="cut" size={64} color="#c9a84c" style={styles.logo} />
         <Text style={styles.title}>ברוך הבא</Text>
@@ -132,17 +156,35 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center' },
   subtitle: { fontSize: 16, color: '#c9a84c', textAlign: 'center', marginBottom: 32 },
   input: {
-    backgroundColor: '#16213e', borderColor: '#333', borderWidth: 1,
-    borderRadius: 10, padding: 14, color: '#fff', fontSize: 16, marginBottom: 12,
+    backgroundColor: '#16213e',
+    borderColor: '#333',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 12,
   },
-  button: { backgroundColor: '#c9a84c', borderRadius: 10, padding: 16, alignItems: 'center', marginTop: 4 },
+  button: {
+    backgroundColor: '#c9a84c',
+    borderRadius: 10,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 4,
+  },
   buttonText: { color: '#1a1a2e', fontWeight: 'bold', fontSize: 16 },
   divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
   line: { flex: 1, height: 1, backgroundColor: '#333' },
   orText: { color: '#888', marginHorizontal: 12 },
   googleButton: {
-    flexDirection: 'row', backgroundColor: '#4285F4', borderRadius: 10,
-    padding: 16, alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 20,
+    flexDirection: 'row',
+    backgroundColor: '#4285F4',
+    borderRadius: 10,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 20,
   },
   googleText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   linkText: { color: '#c9a84c', textAlign: 'center', fontSize: 14 },

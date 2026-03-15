@@ -7,6 +7,7 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import CustomerTabs from './CustomerTabs';
 import BarberTabs from './BarberTabs';
+import AdminTabs from './AdminTabs';
 
 const Stack = createNativeStackNavigator();
 
@@ -29,6 +30,8 @@ export default function AppNavigator() {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
           </>
+        ) : user.role === 'admin' ? (
+          <Stack.Screen name="AdminTabs" component={AdminTabs} />
         ) : user.role === 'barber' ? (
           <Stack.Screen name="BarberTabs" component={BarberTabs} />
         ) : (

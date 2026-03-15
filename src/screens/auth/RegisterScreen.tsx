@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { registerWithEmail } from '../../services/authService';
@@ -16,22 +24,36 @@ export default function RegisterScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!name || !email || !password) { Alert.alert('שגיאה', 'יש למלא שם, מייל וסיסמה'); return; }
-    if (password.length < 6) { Alert.alert('שגיאה', 'סיסמה חייבת להכיל לפחות 6 תווים'); return; }
+    if (!name || !email || !phone || !password) {
+      Alert.alert('שגיאה', 'יש למלא שם, מייל, טלפון וסיסמה');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert('שגיאה', 'הסיסמה חייבת להכיל לפחות 6 תווים');
+      return;
+    }
+
     setLoading(true);
     try {
-      const profile = await registerWithEmail(email, password, name);
+      const profile = await registerWithEmail(email, password, name, phone);
       setUser(profile);
-    } catch (e: any) {
-      if (e.code === 'auth/email-already-in-use') Alert.alert('שגיאה', 'המייל הזה כבר רשום');
-      else Alert.alert('שגיאה', 'הרשמה נכשלה, נסה שוב');
+    } catch (error: any) {
+      if (error.code === 'auth/email-already-in-use') {
+        Alert.alert('שגיאה', 'המייל הזה כבר רשום');
+      } else {
+        Alert.alert('שגיאה', 'ההרשמה נכשלה, נסה שוב');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
         <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#c9a84c" />
@@ -41,17 +63,49 @@ export default function RegisterScreen({ navigation }: any) {
         <Text style={styles.title}>הרשמה</Text>
         <Text style={styles.subtitle}>יצירת חשבון לקוח חדש</Text>
 
-        <TextInput style={styles.input} placeholder="שם מלא" placeholderTextColor="#888"
-          value={name} onChangeText={setName} textAlign="right" />
-        <TextInput style={styles.input} placeholder="מייל" placeholderTextColor="#888"
-          value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" textAlign="right" />
-        <TextInput style={styles.input} placeholder="טלפון (אופציונלי)" placeholderTextColor="#888"
-          value={phone} onChangeText={setPhone} keyboardType="phone-pad" textAlign="right" />
-        <TextInput style={styles.input} placeholder="סיסמה (לפחות 6 תווים)" placeholderTextColor="#888"
-          value={password} onChangeText={setPassword} secureTextEntry textAlign="right" />
+        <TextInput
+          style={styles.input}
+          placeholder="שם מלא"
+          placeholderTextColor="#888"
+          value={name}
+          onChangeText={setName}
+          textAlign="right"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="מייל"
+          placeholderTextColor="#888"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          textAlign="right"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="טלפון"
+          placeholderTextColor="#888"
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+          textAlign="right"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="סיסמה (לפחות 6 תווים)"
+          placeholderTextColor="#888"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          textAlign="right"
+        />
 
         <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-          {loading ? <ActivityIndicator color="#1a1a2e" /> : <Text style={styles.buttonText}>הרשמה</Text>}
+          {loading ? (
+            <ActivityIndicator color="#1a1a2e" />
+          ) : (
+            <Text style={styles.buttonText}>הרשמה</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
@@ -70,12 +124,22 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: 'bold', color: '#fff', textAlign: 'center' },
   subtitle: { fontSize: 14, color: '#c9a84c', textAlign: 'center', marginBottom: 28 },
   input: {
-    backgroundColor: '#16213e', borderColor: '#333', borderWidth: 1,
-    borderRadius: 10, padding: 14, color: '#fff', fontSize: 16, marginBottom: 12,
+    backgroundColor: '#16213e',
+    borderColor: '#333',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 12,
   },
   button: {
-    backgroundColor: '#c9a84c', borderRadius: 10, padding: 16,
-    alignItems: 'center', marginTop: 8, marginBottom: 20,
+    backgroundColor: '#c9a84c',
+    borderRadius: 10,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 20,
   },
   buttonText: { color: '#1a1a2e', fontWeight: 'bold', fontSize: 16 },
   linkText: { color: '#c9a84c', textAlign: 'center', fontSize: 14 },

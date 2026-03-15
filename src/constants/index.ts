@@ -1,4 +1,6 @@
-import { AppointmentStatus, ServiceType } from '../services/appointmentService';
+import { AppointmentStatus } from '../services/appointmentService';
+import { DEFAULT_SERVICE_SETTINGS } from '../services/serviceSettingsService';
+import { getCurrentDateKey } from '../utils/dateFormat';
 
 export const STATUS_COLOR: Record<AppointmentStatus, string> = {
   pending: '#f59e0b',
@@ -12,11 +14,9 @@ export const STATUS_LABEL: Record<AppointmentStatus, string> = {
   cancelled: 'בוטל',
 };
 
-export const SERVICE_PRICES: Record<ServiceType, number> = {
-  'תספורת': 60,
-  'זקן': 40,
-  'תספורת + זקן': 90,
-};
+export const SERVICE_PRICES = Object.fromEntries(
+  Object.values(DEFAULT_SERVICE_SETTINGS).map((setting) => [setting.type, setting.price])
+);
 
 export const CALENDAR_THEME = {
   backgroundColor: '#1a1a2e',
@@ -31,4 +31,4 @@ export const CALENDAR_THEME = {
   monthTextColor: '#fff',
 };
 
-export const todayString = () => new Date().toISOString().split('T')[0];
+export const todayString = () => getCurrentDateKey();

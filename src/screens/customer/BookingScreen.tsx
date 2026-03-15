@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { CALENDAR_THEME } from '../../constants';
+import { Calendar } from 'react-native-calendars';
+import { Ionicons } from '@expo/vector-icons';
 import {
   View,
   Text,
@@ -9,10 +10,14 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Calendar } from 'react-native-calendars';
-import { Ionicons } from '@expo/vector-icons';
+import { CALENDAR_THEME, todayString } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
-import { ServiceType, createAppointment, getAvailableSlots } from '../../services/appointmentService';
+import { formatDisplayDate } from '../../utils/dateFormat';
+import {
+  ServiceType,
+  createAppointment,
+  getAvailableSlots,
+} from '../../services/appointmentService';
 import { scheduleLocalReminder } from '../../services/notificationService';
 
 interface Props {
@@ -23,12 +28,12 @@ interface Props {
 
 export default function BookingScreen({ barberId, service, onBack }: Props) {
   const { user } = useAuth();
-  const [selectedDate, setSelectedDate] = useState('');
+  const today = todayString();
+  const [selectedDate, setSelectedDate] = useState(today);
   const [slots, setSlots] = useState<string[]>([]);
   const [selectedTime, setSelectedTime] = useState('');
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (!selectedDate) return;
@@ -36,14 +41,14 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
     setLoadingSlots(true);
     setSelectedTime('');
 
-    getAvailableSlots(barberId, selectedDate)
+    getAvailableSlots(barberId, selectedDate, service)
       .then(setSlots)
       .catch((error) => {
         console.error('getAvailableSlots error:', error);
         setSlots([]);
       })
       .finally(() => setLoadingSlots(false));
-  }, [barberId, selectedDate]);
+  }, [barberId, selectedDate, service]);
 
   const handleBook = async () => {
     if (!user || !selectedDate || !selectedTime) {
@@ -62,7 +67,7 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
         service,
         date: selectedDate,
         time: selectedTime,
-        status: 'pending',
+        status: 'confirmed',
         createdAt: new Date(),
       });
 
@@ -74,12 +79,17 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
 
       Alert.alert(
         'התור נקבע!',
-        `${service}\n${selectedDate} בשעה ${selectedTime}\n\nתקבל אישור מהספר בקרוב.`,
+        `${service}\n${formatDisplayDate(selectedDate)} בשעה ${selectedTime}\n\nהתור שלך אושר ונשמר בהצלחה.`,
         [{ text: 'אישור', onPress: onBack }]
       );
     } catch (error) {
       console.error('Failed to create appointment', error);
-      Alert.alert('שגיאה', 'קביעת התור נכשלה, נסה שוב');
+
+      if (error instanceof Error && error.message === 'CUSTOMER_BLOCKED') {
+        Alert.alert('לא ניתן לקבוע תור', 'הספר חסם את החשבון הזה לקביעת תורים חדשים.');
+      } else {
+        Alert.alert('שגיאה', 'קביעת התור נכשלה, נסה שוב');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -92,7 +102,7 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
           <Ionicons name="arrow-back" size={24} color="#c9a84c" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{service}</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView>
@@ -112,7 +122,7 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
           <>
             <Text style={styles.sectionTitle}>בחר שעה</Text>
             {loadingSlots ? (
-              <ActivityIndicator color="#c9a84c" style={{ margin: 20 }} />
+              <ActivityIndicator color="#c9a84c" style={styles.loader} />
             ) : slots.length === 0 ? (
               <Text style={styles.noSlots}>אין שעות פנויות ביום זה</Text>
             ) : (
@@ -137,7 +147,7 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
           <View style={styles.summary}>
             <Text style={styles.summaryTitle}>סיכום התור</Text>
             <Text style={styles.summaryLine}>שירות: {service}</Text>
-            <Text style={styles.summaryLine}>תאריך: {selectedDate}</Text>
+            <Text style={styles.summaryLine}>תאריך: {formatDisplayDate(selectedDate)}</Text>
             <Text style={styles.summaryLine}>שעה: {selectedTime}</Text>
             <TouchableOpacity style={styles.bookButton} onPress={handleBook} disabled={submitting}>
               {submitting ? (
@@ -165,7 +175,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#16213e',
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#c9a84c', padding: 16, paddingBottom: 8 },
+  headerSpacer: { width: 24 },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#c9a84c',
+    padding: 16,
+    paddingBottom: 8,
+  },
+  loader: { margin: 20 },
   noSlots: { color: '#888', textAlign: 'center', padding: 20 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 10 },
   slot: {

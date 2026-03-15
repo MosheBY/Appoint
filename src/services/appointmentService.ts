@@ -2,11 +2,14 @@ import {
   collection,
   doc,
   addDoc,
+  arrayRemove,
+  arrayUnion,
   updateDoc,
   deleteDoc,
   getDocs,
   getDoc,
   query,
+  runTransaction,
   where,
   Timestamp,
   setDoc,
@@ -14,6 +17,11 @@ import {
 import { db } from './firebase';
 import { sendPushNotification } from './notificationService';
 import { getUserProfile } from './authService';
+import { getCurrentDateKey, getCurrentTimeInMinutes } from '../utils/dateFormat';
+import {
+  DEFAULT_SERVICE_SETTINGS,
+  getServiceSettingsMap,
+} from './serviceSettingsService';
 
 export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled';
 export type ServiceType = 'תספורת' | 'זקן' | 'תספורת + זקן';
@@ -33,16 +41,240 @@ export interface Appointment {
   createdAt: any;
 }
 
+const DEFAULT_SERVICE_DURATION_MINUTES: Record<ServiceType, number> = {
+  'תספורת': DEFAULT_SERVICE_SETTINGS['תספורת'].duration,
+  'זקן': DEFAULT_SERVICE_SETTINGS['זקן'].duration,
+  'תספורת + זקן': DEFAULT_SERVICE_SETTINGS['תספורת + זקן'].duration,
+};
+const APPOINTMENT_LOCKS_COLLECTION = 'appointmentLocks';
+
 const compareAppointments = (a: Appointment, b: Appointment) => {
   const byDate = a.date.localeCompare(b.date);
   if (byDate !== 0) return byDate;
   return a.time.localeCompare(b.time);
 };
 
+const timeToMinutes = (time: string) => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+const minutesToTime = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+};
+
+const rangesOverlap = (startA: number, endA: number, startB: number, endB: number) =>
+  startA < endB && startB < endA;
+
+const getAppointmentDurationMinutes = (
+  service: ServiceType,
+  serviceSettings: Awaited<ReturnType<typeof getServiceSettingsMap>>
+) => serviceSettings[service]?.duration ?? DEFAULT_SERVICE_DURATION_MINUTES[service] ?? 30;
+
+const getLockTimeBlocks = (
+  time: string,
+  durationMinutes: number
+) => {
+  const startMinutes = timeToMinutes(time);
+  const blocks: string[] = [];
+
+  for (let minutes = startMinutes; minutes < startMinutes + durationMinutes; minutes += 30) {
+    blocks.push(minutesToTime(minutes));
+  }
+
+  return blocks;
+};
+
+const getAppointmentLockRefs = (
+  appointment: Pick<Appointment, 'barberId' | 'date' | 'time' | 'service'>,
+  serviceSettings: Awaited<ReturnType<typeof getServiceSettingsMap>>
+) => {
+  const durationMinutes = getAppointmentDurationMinutes(appointment.service, serviceSettings);
+  const timeBlocks = getLockTimeBlocks(appointment.time, durationMinutes);
+
+  return timeBlocks.map((timeBlock) =>
+    doc(db, APPOINTMENT_LOCKS_COLLECTION, `${appointment.barberId}_${appointment.date}_${timeBlock.replace(':', '-')}`)
+  );
+};
+
+const hydrateAppointment = async (appointment: Appointment): Promise<Appointment> => {
+  if (appointment.customerPhone || appointment.customerId.startsWith('manual_')) {
+    return appointment;
+  }
+
+  try {
+    const customer = await getUserProfile(appointment.customerId);
+    if (!customer?.phone) {
+      return appointment;
+    }
+
+    return {
+      ...appointment,
+      customerPhone: customer.phone,
+    };
+  } catch {
+    return appointment;
+  }
+};
+
+const hydrateAppointments = async (appointments: Appointment[]) =>
+  Promise.all(appointments.map(hydrateAppointment));
+
+const isAppointmentDataValid = (
+  appointment: Partial<Appointment>
+): appointment is Pick<Appointment, 'barberId' | 'customerId' | 'customerName' | 'date' | 'time' | 'service' | 'status'> =>
+  !!appointment.barberId &&
+  !!appointment.customerId &&
+  !!appointment.customerName &&
+  !!appointment.date &&
+  !!appointment.time &&
+  !!appointment.service &&
+  !!appointment.status;
+
+const assertAppointmentCanBeScheduled = ({
+  appointment,
+  availability,
+  appointments,
+  serviceSettings,
+  excludedAppointmentId,
+}: {
+  appointment: Appointment;
+  availability: BarberAvailability | null;
+  appointments: Appointment[];
+  serviceSettings: Awaited<ReturnType<typeof getServiceSettingsMap>>;
+  excludedAppointmentId?: string;
+}) => {
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayKey = days[new Date(appointment.date + 'T12:00:00').getDay()];
+  const dayConfig = availability?.schedule?.[dayKey];
+
+  if (!dayConfig?.isOpen) {
+    throw new Error('BARBER_UNAVAILABLE');
+  }
+
+  if (availability?.vacationDays?.includes(appointment.date)) {
+    throw new Error('BARBER_ON_VACATION');
+  }
+
+  if (
+    !appointment.customerId.startsWith('manual_') &&
+    availability?.blockedCustomerIds?.includes(appointment.customerId)
+  ) {
+    throw new Error('CUSTOMER_BLOCKED');
+  }
+
+  const serviceDuration =
+    serviceSettings[appointment.service]?.duration ??
+    DEFAULT_SERVICE_DURATION_MINUTES[appointment.service] ??
+    30;
+  const appointmentStart = timeToMinutes(appointment.time);
+  const appointmentEnd = appointmentStart + serviceDuration;
+  const startMinutes = timeToMinutes(dayConfig.start ?? '09:00');
+  const endMinutes = timeToMinutes(dayConfig.end ?? '18:00');
+
+  if (appointmentStart < startMinutes || appointmentEnd > endMinutes) {
+    throw new Error('OUTSIDE_WORKING_HOURS');
+  }
+
+  const isToday = appointment.date === getCurrentDateKey();
+  const currentMinutes = getCurrentTimeInMinutes();
+  if (isToday && appointmentStart <= currentMinutes) {
+    throw new Error('TIME_ALREADY_PASSED');
+  }
+
+  const blockedSlots = availability?.blockedSlots?.[appointment.date] ?? [];
+  const overlapsBlockedSlot = blockedSlots.some((blockedSlot) => {
+    const blockedStart = timeToMinutes(blockedSlot);
+    const blockedEnd = blockedStart + 30;
+    return rangesOverlap(appointmentStart, appointmentEnd, blockedStart, blockedEnd);
+  });
+
+  if (overlapsBlockedSlot) {
+    throw new Error('BLOCKED_SLOT');
+  }
+
+  const activeAppointments = appointments.filter(
+    (entry) => entry.status !== 'cancelled' && entry.id !== excludedAppointmentId
+  );
+
+  const overlapsExisting = activeAppointments.some((entry) => {
+    const entryStart = timeToMinutes(entry.time);
+    const entryDuration =
+      serviceSettings[entry.service]?.duration ??
+      DEFAULT_SERVICE_DURATION_MINUTES[entry.service] ??
+      30;
+    const entryEnd = entryStart + entryDuration;
+    return rangesOverlap(appointmentStart, appointmentEnd, entryStart, entryEnd);
+  });
+
+  if (overlapsExisting) {
+    throw new Error('SLOT_NOT_AVAILABLE');
+  }
+};
+
 export const createAppointment = async (data: Omit<Appointment, 'id'>): Promise<string> => {
-  const ref = await addDoc(collection(db, 'appointments'), {
+  if (!isAppointmentDataValid(data)) {
+    throw new Error('INVALID_APPOINTMENT_DATA');
+  }
+
+  const customerProfile =
+    !data.customerPhone && !data.customerId.startsWith('manual_')
+      ? await getUserProfile(data.customerId)
+      : null;
+  const [availability, existingAppointments] = await Promise.all([
+    getBarberAvailability(data.barberId),
+    getBarberAppointments(data.barberId, data.date),
+  ]);
+  const serviceSettings = await getServiceSettingsMap();
+  assertAppointmentCanBeScheduled({
+    appointment: data,
+    availability,
+    appointments: existingAppointments,
+    serviceSettings,
+  });
+
+  const appointmentRef = doc(collection(db, 'appointments'));
+  const lockRefs = getAppointmentLockRefs(data, serviceSettings);
+  const payload = {
     ...data,
+    customerPhone: data.customerPhone ?? customerProfile?.phone,
+    price: data.price ?? serviceSettings[data.service]?.price ?? DEFAULT_SERVICE_SETTINGS[data.service].price,
     createdAt: Timestamp.now(),
+  } as Record<string, unknown>;
+
+  if (payload.customerPhone === undefined) delete payload.customerPhone;
+  if (payload.notes === undefined) delete payload.notes;
+  if (payload.price === undefined) delete payload.price;
+
+  await runTransaction(db, async (transaction) => {
+    const availabilityRef = doc(db, 'availability', data.barberId);
+    const [availabilitySnap, ...lockSnapshots] = await Promise.all([
+      transaction.get(availabilityRef),
+      ...lockRefs.map((lockRef) => transaction.get(lockRef)),
+    ]);
+
+    assertAppointmentCanBeScheduled({
+      appointment: data,
+      availability: availabilitySnap.exists() ? (availabilitySnap.data() as BarberAvailability) : null,
+      appointments: existingAppointments,
+      serviceSettings,
+    });
+
+    if (lockSnapshots.some((snapshot) => snapshot.exists())) {
+      throw new Error('SLOT_NOT_AVAILABLE');
+    }
+
+    transaction.set(appointmentRef, payload);
+    lockRefs.forEach((lockRef) =>
+      transaction.set(lockRef, {
+        appointmentId: appointmentRef.id,
+        barberId: data.barberId,
+        date: data.date,
+        time: lockRef.id.split('_').slice(-1)[0].replace('-', ':'),
+      })
+    );
   });
 
   try {
@@ -58,7 +290,7 @@ export const createAppointment = async (data: Omit<Appointment, 'id'>): Promise<
     console.warn('Failed to send push notification to barber', error);
   }
 
-  return ref.id;
+  return appointmentRef.id;
 };
 
 export const updateAppointment = async (
@@ -66,7 +298,95 @@ export const updateAppointment = async (
   changes: Partial<Appointment>,
   notifyCustomer = true
 ): Promise<void> => {
-  await updateDoc(doc(db, 'appointments', id), changes);
+  const appointmentRef = doc(db, 'appointments', id);
+  const requiresAvailabilityValidation = ['barberId', 'date', 'time', 'service', 'status'].some(
+    (field) => field in changes
+  );
+
+  if (!requiresAvailabilityValidation) {
+    await updateDoc(appointmentRef, changes);
+  } else {
+    const serviceSettings = await getServiceSettingsMap();
+
+    await runTransaction(db, async (transaction) => {
+      const currentAppointmentSnap = await transaction.get(appointmentRef);
+
+      if (!currentAppointmentSnap.exists()) {
+        throw new Error('APPOINTMENT_NOT_FOUND');
+      }
+
+      const currentAppointment = {
+        id: currentAppointmentSnap.id,
+        ...currentAppointmentSnap.data(),
+      } as Appointment;
+      const nextAppointment = {
+        ...currentAppointment,
+        ...changes,
+      } as Appointment;
+
+      if (!isAppointmentDataValid(nextAppointment)) {
+        throw new Error('INVALID_APPOINTMENT_DATA');
+      }
+
+      const currentLockRefs = getAppointmentLockRefs(currentAppointment, serviceSettings);
+      const nextLockRefs =
+        nextAppointment.status === 'cancelled'
+          ? []
+          : getAppointmentLockRefs(nextAppointment, serviceSettings);
+      const allLockRefs = [...currentLockRefs, ...nextLockRefs].filter(
+        (lockRef, index, refs) => refs.findIndex((entry) => entry.path === lockRef.path) === index
+      );
+
+      if (nextAppointment.status !== 'cancelled') {
+        const availabilityRef = doc(db, 'availability', nextAppointment.barberId);
+        const [availabilitySnap, ...lockSnapshots] = await Promise.all([
+          transaction.get(availabilityRef),
+          ...allLockRefs.map((lockRef) => transaction.get(lockRef)),
+        ]);
+
+        const existingAppointments = await getBarberAppointments(nextAppointment.barberId, nextAppointment.date);
+        assertAppointmentCanBeScheduled({
+          appointment: nextAppointment,
+          availability: availabilitySnap.exists()
+            ? (availabilitySnap.data() as BarberAvailability)
+            : null,
+          appointments: existingAppointments,
+          serviceSettings,
+          excludedAppointmentId: currentAppointment.id,
+        });
+
+        const hasConflictingLock = lockSnapshots.some((snapshot) => {
+          if (!snapshot.exists()) return false;
+          return snapshot.data()?.appointmentId !== currentAppointment.id;
+        });
+
+        if (hasConflictingLock) {
+          throw new Error('SLOT_NOT_AVAILABLE');
+        }
+      }
+
+      transaction.update(appointmentRef, changes);
+
+      currentLockRefs.forEach((lockRef) => {
+        if (!nextLockRefs.some((nextRef) => nextRef.path === lockRef.path)) {
+          transaction.delete(lockRef);
+        }
+      });
+
+      nextLockRefs.forEach((lockRef) => {
+        transaction.set(
+          lockRef,
+          {
+            appointmentId: currentAppointment.id,
+            barberId: nextAppointment.barberId,
+            date: nextAppointment.date,
+            time: lockRef.id.split('_').slice(-1)[0].replace('-', ':'),
+          },
+          { merge: true }
+        );
+      });
+    });
+  }
 
   if (!notifyCustomer) return;
 
@@ -92,6 +412,8 @@ export const updateAppointment = async (
 };
 
 export const deleteAppointment = async (id: string, notifyCustomer = true): Promise<void> => {
+  const serviceSettings = await getServiceSettingsMap();
+
   if (notifyCustomer) {
     try {
       const snap = await getDoc(doc(db, 'appointments', id));
@@ -111,15 +433,29 @@ export const deleteAppointment = async (id: string, notifyCustomer = true): Prom
     }
   }
 
-  await deleteDoc(doc(db, 'appointments', id));
+  await runTransaction(db, async (transaction) => {
+    const appointmentRef = doc(db, 'appointments', id);
+    const appointmentSnap = await transaction.get(appointmentRef);
+
+    if (!appointmentSnap.exists()) {
+      return;
+    }
+
+    const appointment = { id: appointmentSnap.id, ...appointmentSnap.data() } as Appointment;
+    const lockRefs = getAppointmentLockRefs(appointment, serviceSettings);
+
+    lockRefs.forEach((lockRef) => transaction.delete(lockRef));
+    transaction.delete(appointmentRef);
+  });
 };
 
 export const getCustomerAppointments = async (customerId: string): Promise<Appointment[]> => {
   const q = query(collection(db, 'appointments'), where('customerId', '==', customerId));
   const snap = await getDocs(q);
-  return snap.docs
+  const appointments = snap.docs
     .map((d) => ({ id: d.id, ...d.data() } as Appointment))
     .sort((a, b) => compareAppointments(b, a));
+  return hydrateAppointments(appointments);
 };
 
 export const getBarberAppointments = async (
@@ -135,9 +471,10 @@ export const getBarberAppointments = async (
     : query(collection(db, 'appointments'), where('barberId', '==', barberId));
 
   const snap = await getDocs(q);
-  return snap.docs
+  const appointments = snap.docs
     .map((d) => ({ id: d.id, ...d.data() } as Appointment))
     .sort(compareAppointments);
+  return hydrateAppointments(appointments);
 };
 
 export const getAppointmentsByCustomer = async (
@@ -150,14 +487,24 @@ export const getAppointmentsByCustomer = async (
     where('customerId', '==', customerId)
   );
   const snap = await getDocs(q);
-  return snap.docs
+  const appointments = snap.docs
     .map((d) => ({ id: d.id, ...d.data() } as Appointment))
     .sort((a, b) => compareAppointments(b, a));
+  return hydrateAppointments(appointments);
+};
+
+export const getAllAppointments = async (): Promise<Appointment[]> => {
+  const snap = await getDocs(collection(db, 'appointments'));
+  const appointments = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Appointment))
+    .sort(compareAppointments);
+  return hydrateAppointments(appointments);
 };
 
 export const getAvailableSlots = async (
   barberId: string,
-  date: string
+  date: string,
+  service: ServiceType = 'תספורת'
 ): Promise<string[]> => {
   const availability = await getBarberAvailability(barberId);
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -170,23 +517,42 @@ export const getAvailableSlots = async (
   const start = dayConfig.start ?? '09:00';
   const end = dayConfig.end ?? '18:00';
   const blockedSlots = availability?.blockedSlots?.[date] ?? [];
+  const serviceSettings = await getServiceSettingsMap();
+  const serviceDuration = serviceSettings[service]?.duration ?? DEFAULT_SERVICE_DURATION_MINUTES[service] ?? 30;
 
   const existing = await getBarberAppointments(barberId, date);
-  const bookedTimes = existing.filter((a) => a.status !== 'cancelled').map((a) => a.time);
+  const bookedAppointments = existing.filter((a) => a.status !== 'cancelled');
 
   const slots: string[] = [];
-  let [h, m] = start.split(':').map(Number);
-  const [endH, endM] = end.split(':').map(Number);
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+  const now = new Date();
+  const isToday = date === getCurrentDateKey(now);
+  const currentMinutes = getCurrentTimeInMinutes(now);
 
-  while (h < endH || (h === endH && m < endM)) {
-    const slot = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    if (!bookedTimes.includes(slot) && !blockedSlots.includes(slot)) {
+  for (let slotStart = startMinutes; slotStart + serviceDuration <= endMinutes; slotStart += 30) {
+    const slot = minutesToTime(slotStart);
+    const slotEnd = slotStart + serviceDuration;
+    const isPastSlot = isToday && slotStart <= currentMinutes;
+
+    const overlapsBookedAppointment = bookedAppointments.some((appointment) => {
+      const appointmentStart = timeToMinutes(appointment.time);
+      const appointmentDuration =
+        serviceSettings[appointment.service]?.duration ??
+        DEFAULT_SERVICE_DURATION_MINUTES[appointment.service] ??
+        30;
+      const appointmentEnd = appointmentStart + appointmentDuration;
+      return rangesOverlap(slotStart, slotEnd, appointmentStart, appointmentEnd);
+    });
+
+    const overlapsBlockedSlot = blockedSlots.some((blockedSlot) => {
+      const blockedStart = timeToMinutes(blockedSlot);
+      const blockedEnd = blockedStart + 30;
+      return rangesOverlap(slotStart, slotEnd, blockedStart, blockedEnd);
+    });
+
+    if (!isPastSlot && !overlapsBookedAppointment && !overlapsBlockedSlot) {
       slots.push(slot);
-    }
-    m += 30;
-    if (m >= 60) {
-      h++;
-      m -= 60;
     }
   }
 
@@ -204,6 +570,7 @@ export interface BarberAvailability {
   schedule: Record<string, DaySchedule>;
   blockedSlots: Record<string, string[]>;
   vacationDays: string[];
+  blockedCustomerIds?: string[];
 }
 
 export const getBarberAvailability = async (barberId: string): Promise<BarberAvailability | null> => {
@@ -216,4 +583,39 @@ export const updateBarberAvailability = async (
   data: Partial<BarberAvailability>
 ): Promise<void> => {
   await setDoc(doc(db, 'availability', barberId), { barberId, ...data }, { merge: true });
+};
+
+export const getBlockedCustomerIds = async (barberId: string): Promise<string[]> => {
+  const availability = await getBarberAvailability(barberId);
+  return availability?.blockedCustomerIds ?? [];
+};
+
+export const isCustomerBlocked = async (
+  barberId: string,
+  customerId: string
+): Promise<boolean> => {
+  const blockedCustomerIds = await getBlockedCustomerIds(barberId);
+  return blockedCustomerIds.includes(customerId);
+};
+
+export const blockCustomer = async (barberId: string, customerId: string): Promise<void> => {
+  await setDoc(
+    doc(db, 'availability', barberId),
+    {
+      barberId,
+      blockedCustomerIds: arrayUnion(customerId),
+    },
+    { merge: true }
+  );
+};
+
+export const unblockCustomer = async (barberId: string, customerId: string): Promise<void> => {
+  await setDoc(
+    doc(db, 'availability', barberId),
+    {
+      barberId,
+      blockedCustomerIds: arrayRemove(customerId),
+    },
+    { merge: true }
+  );
 };
