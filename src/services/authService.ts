@@ -129,6 +129,11 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
     .sort((a, b) => a.name.localeCompare(b.name));
 };
 
+export const getActiveUsersWithPushTokens = async (): Promise<UserProfile[]> => {
+  const users = await getAllUsers();
+  return users.filter((user) => user.isActive && !!user.expoPushToken);
+};
+
 export const updateUserRole = async (uid: string, role: UserRole): Promise<void> => {
   await setDoc(doc(db, 'users', uid), { role }, { merge: true });
 };

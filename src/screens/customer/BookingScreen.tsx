@@ -9,15 +9,20 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { CALENDAR_THEME, todayString } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
-import { formatDisplayDate } from '../../utils/dateFormat';
+import { getAppointmentErrorMessage } from '../../utils/appointmentErrors';
+import { formatDisplayDate, getDateKeyWithOffset } from '../../utils/dateFormat';
+import { getUserProfile } from '../../services/authService';
 import {
   ServiceType,
   createAppointment,
   getAvailableSlots,
+  updateAppointmentReminderNotificationId,
 } from '../../services/appointmentService';
+import { BookingSettings, getBookingSettings } from '../../services/bookingSettingsService';
 import { scheduleLocalReminder } from '../../services/notificationService';
 
 interface Props {
@@ -34,20 +39,62 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
   const [selectedTime, setSelectedTime] = useState('');
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [maxBookingDate, setMaxBookingDate] = useState(today);
+  const [bookingSettings, setBookingSettings] = useState<BookingSettings | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const minBookingDate = bookingSettings?.allowSameDayBooking ? today : getDateKeyWithOffset(1);
 
-  useEffect(() => {
-    if (!selectedDate) return;
+  const loadBookingSettings = async () => {
+    const settings = await getBookingSettings();
+    setBookingSettings(settings);
+    setMaxBookingDate(settings.bookingWindowEndDate);
+
+    const nextMinDate = settings.allowSameDayBooking ? today : getDateKeyWithOffset(1);
+    setSelectedDate((current) =>
+      current < nextMinDate
+        ? nextMinDate
+        : current > settings.bookingWindowEndDate
+          ? settings.bookingWindowEndDate
+          : current
+    );
+  };
+
+  const loadSlots = async (date: string) => {
+    if (!date) return;
 
     setLoadingSlots(true);
     setSelectedTime('');
 
-    getAvailableSlots(barberId, selectedDate, service)
-      .then(setSlots)
-      .catch((error) => {
-        console.error('getAvailableSlots error:', error);
-        setSlots([]);
-      })
-      .finally(() => setLoadingSlots(false));
+    try {
+      const nextSlots = await getAvailableSlots(barberId, date, service);
+      setSlots(nextSlots);
+    } catch (error) {
+      console.error('getAvailableSlots error:', error);
+      setSlots([]);
+    } finally {
+      setLoadingSlots(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadBookingSettings();
+      await loadSlots(selectedDate);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBookingSettings().catch((error) => {
+      console.error('Failed to load booking settings', error);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedDate) return;
+    loadSlots(selectedDate);
   }, [barberId, selectedDate, service]);
 
   const handleBook = async () => {
@@ -72,7 +119,20 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
       });
 
       try {
-        await scheduleLocalReminder(apptId, selectedDate, selectedTime, service);
+        const barber = await getUserProfile(barberId);
+        const reminderNotificationId = await scheduleLocalReminder(
+          apptId,
+          selectedDate,
+          selectedTime,
+          service,
+          user.name,
+          barber?.name ?? 'הספר',
+          bookingSettings?.reminderLeadTimeMinutes ?? 120
+        );
+
+        if (reminderNotificationId) {
+          await updateAppointmentReminderNotificationId(apptId, reminderNotificationId);
+        }
       } catch (error) {
         console.warn('Failed to schedule local reminder', error);
       }
@@ -84,12 +144,7 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
       );
     } catch (error) {
       console.error('Failed to create appointment', error);
-
-      if (error instanceof Error && error.message === 'CUSTOMER_BLOCKED') {
-        Alert.alert('לא ניתן לקבוע תור', 'הספר חסם את החשבון הזה לקביעת תורים חדשים.');
-      } else {
-        Alert.alert('שגיאה', 'קביעת התור נכשלה, נסה שוב');
-      }
+      Alert.alert('לא ניתן לקבוע תור', getAppointmentErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -105,10 +160,19 @@ export default function BookingScreen({ barberId, service, onBack }: Props) {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView>
+      <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#c9a84c"
+          />
+        }
+      >
         <Text style={styles.sectionTitle}>בחר תאריך</Text>
         <Calendar
-          minDate={today}
+          minDate={minBookingDate}
+          maxDate={maxBookingDate}
           onDayPress={(day: { dateString: string }) => setSelectedDate(day.dateString)}
           markedDates={
             selectedDate

@@ -3,13 +3,13 @@ import { DEFAULT_SERVICE_SETTINGS } from '../services/serviceSettingsService';
 import { getCurrentDateKey } from '../utils/dateFormat';
 
 export const STATUS_COLOR: Record<AppointmentStatus, string> = {
-  pending: '#f59e0b',
+  pending: '#10b981',
   confirmed: '#10b981',
   cancelled: '#ef4444',
 };
 
 export const STATUS_LABEL: Record<AppointmentStatus, string> = {
-  pending: 'ממתין',
+  pending: 'מאושר',
   confirmed: 'מאושר',
   cancelled: 'בוטל',
 };

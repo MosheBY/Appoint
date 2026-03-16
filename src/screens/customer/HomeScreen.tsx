@@ -5,19 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
-import {
-  deleteCurrentCustomerAccount,
-  getBarbers,
-  logout,
-  UserProfile,
-} from '../../services/authService';
+import { getBarbers, UserProfile } from '../../services/authService';
 import BookingScreen from './BookingScreen';
 import {
   getBarberAvailability,
@@ -27,14 +21,13 @@ import {
 import { getServiceSettings, ServiceSetting } from '../../services/serviceSettingsService';
 
 export default function HomeScreen() {
-  const { user, setUser } = useAuth();
+  const { user } = useAuth();
   const [selectedService, setSelectedService] = useState<ServiceType | null>(null);
   const [barbers, setBarbers] = useState<UserProfile[]>([]);
   const [services, setServices] = useState<ServiceSetting[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
   const [loadingBarbers, setLoadingBarbers] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const load = async (showLoader = false) => {
     if (showLoader) {
@@ -90,56 +83,6 @@ export default function HomeScreen() {
 
   const selectedBarber = barbers.find((barber) => barber.uid === selectedBarberId) ?? null;
 
-  const handleLogout = () => {
-    Alert.alert('יציאה', 'האם אתה בטוח שברצונך להתנתק?', [
-      { text: 'ביטול', style: 'cancel' },
-      {
-        text: 'יציאה',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          setUser(null);
-        },
-      },
-    ]);
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'מחיקת חשבון',
-      'החשבון יימחק יחד עם התורים שלך. אחרי המחיקה לא יהיה אפשר לשחזר את הנתונים.',
-      [
-        { text: 'ביטול', style: 'cancel' },
-        {
-          text: 'מחק חשבון',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setDeletingAccount(true);
-              await deleteCurrentCustomerAccount();
-              setUser(null);
-            } catch (error) {
-              console.error('Failed to delete customer account', error);
-
-              if (error instanceof Error && error.message === 'REQUIRES_RECENT_LOGIN') {
-                Alert.alert('נדרשת התחברות מחדש', 'למחיקת חשבון צריך להתחבר מחדש ואז לנסות שוב.');
-              } else if (
-                error instanceof Error &&
-                error.message === 'ONLY_CUSTOMER_SELF_DELETE_SUPPORTED'
-              ) {
-                Alert.alert('לא ניתן למחוק חשבון זה', 'האפשרות הזו זמינה כרגע רק ללקוחות.');
-              } else {
-                Alert.alert('שגיאה', 'לא הצלחנו למחוק את החשבון. נסה שוב.');
-              }
-            } finally {
-              setDeletingAccount(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   if (selectedService && selectedBarber) {
     return (
       <BookingScreen
@@ -161,9 +104,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#c9a84c" />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
         <Text style={styles.headerTitle}>קביעת תור</Text>
         <View style={styles.headerSpacer} />
       </View>
@@ -231,17 +172,6 @@ export default function HomeScreen() {
             <Ionicons name="chevron-back" size={20} color="#555" />
           </TouchableOpacity>
         ))}
-
-        <TouchableOpacity
-          style={[styles.deleteAccountButton, deletingAccount && styles.deleteAccountButtonDisabled]}
-          onPress={handleDeleteAccount}
-          disabled={deletingAccount}
-        >
-          <Ionicons name="trash-outline" size={18} color="#ef4444" />
-          <Text style={styles.deleteAccountText}>
-            {deletingAccount ? 'מוחק חשבון...' : 'מחק חשבון לקוח'}
-          </Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -315,19 +245,4 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
   cardSub: { fontSize: 13, color: '#888', marginTop: 2 },
   cardPrice: { fontSize: 16, fontWeight: 'bold', color: '#c9a84c', marginRight: 8 },
-  deleteAccountButton: {
-    marginTop: 12,
-    marginBottom: 32,
-    borderWidth: 1,
-    borderColor: '#ef4444',
-    borderRadius: 14,
-    paddingVertical: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: '#ef444411',
-  },
-  deleteAccountButtonDisabled: { opacity: 0.6 },
-  deleteAccountText: { color: '#ef4444', fontSize: 15, fontWeight: 'bold' },
 });

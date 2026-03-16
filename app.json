@@ -21,7 +21,8 @@
         {
           "color": "#c9a84c"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "scheme": "barberapp"
   }

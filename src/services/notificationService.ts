@@ -47,7 +47,7 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
     }
 
     return token;
-  } catch (error) {
+  } catch {
     console.warn('Push notification registration skipped');
     return null;
   }
@@ -66,24 +66,40 @@ export const sendPushNotification = async (
   });
 };
 
+export const sendPushNotifications = async (
+  expoPushTokens: string[],
+  title: string,
+  body: string,
+  data?: object
+): Promise<void> => {
+  if (expoPushTokens.length === 0) return;
+
+  await Promise.all(
+    expoPushTokens.map((token) => sendPushNotification(token, title, body, data))
+  );
+};
+
 export const scheduleLocalReminder = async (
   appointmentId: string,
   date: string,
   time: string,
-  serviceName: string
+  serviceName: string,
+  customerName: string,
+  barberName: string,
+  reminderLeadTimeMinutes = 120
 ): Promise<string> => {
   const [year, month, day] = date.split('-').map(Number);
   const [hour, minute] = time.split(':').map(Number);
 
   const appointmentDate = new Date(year, month - 1, day, hour, minute);
-  const reminderDate = new Date(appointmentDate.getTime() - 60 * 60 * 1000);
+  const reminderDate = new Date(appointmentDate.getTime() - reminderLeadTimeMinutes * 60 * 1000);
 
   if (reminderDate <= new Date()) return '';
 
   const id = await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'תזכורת תור!',
-      body: `יש לך תור ל${serviceName} בעוד שעה (${time})`,
+      title: 'תזכורת לתור שלך',
+      body: `היי ${customerName}, אנחנו מתזכרים אותך לגבי התור שקבעת ל${serviceName} אצל ${barberName} היום בשעה ${time}. נא להגיע בזמן. במידה ואתה לא יכול להגיע נא לבטל את התור. תודה, המספרה. הכתובת שלנו: העצמאות 44 אשדוד`,
       data: { appointmentId },
     },
     trigger: {
@@ -96,5 +112,6 @@ export const scheduleLocalReminder = async (
 };
 
 export const cancelScheduledReminder = async (notificationId: string): Promise<void> => {
+  if (!notificationId) return;
   await Notifications.cancelScheduledNotificationAsync(notificationId);
 };

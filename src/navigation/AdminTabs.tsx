@@ -3,7 +3,9 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import AdminDashboard from '../screens/admin/AdminDashboard';
 import AdminAppointmentsScreen from '../screens/admin/AdminAppointmentsScreen';
+import AdminBroadcastScreen from '../screens/admin/AdminBroadcastScreen';
 import AdminServiceSettingsScreen from '../screens/admin/AdminServiceSettingsScreen';
+import AdminSystemSettingsScreen from '../screens/admin/AdminSystemSettingsScreen';
 import AdminUsersScreen from '../screens/admin/AdminUsersScreen';
 
 const Tab = createBottomTabNavigator();
@@ -26,38 +28,32 @@ export default function AdminTabs() {
                 ? focused
                   ? 'calendar'
                   : 'calendar-outline'
-                : route.name === 'AdminServices'
+                : route.name === 'AdminBroadcast'
                   ? focused
-                    ? 'pricetags'
-                    : 'pricetags-outline'
-                  : focused
-                    ? 'people'
-                    : 'people-outline';
+                    ? 'megaphone'
+                    : 'megaphone-outline'
+                  : route.name === 'AdminServices'
+                    ? focused
+                      ? 'pricetags'
+                      : 'pricetags-outline'
+                    : route.name === 'AdminSettings'
+                      ? focused
+                        ? 'settings'
+                        : 'settings-outline'
+                      : focused
+                        ? 'people'
+                        : 'people-outline';
 
           return <Ionicons name={iconName as any} size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen
-        name="AdminDashboard"
-        component={AdminDashboard}
-        options={{ title: 'דשבורד' }}
-      />
-      <Tab.Screen
-        name="AdminAppointments"
-        component={AdminAppointmentsScreen}
-        options={{ title: 'תורים' }}
-      />
-      <Tab.Screen
-        name="AdminServices"
-        component={AdminServiceSettingsScreen}
-        options={{ title: 'שירותים' }}
-      />
-      <Tab.Screen
-        name="AdminUsers"
-        component={AdminUsersScreen}
-        options={{ title: 'משתמשים' }}
-      />
+      <Tab.Screen name="AdminDashboard" component={AdminDashboard} options={{ title: 'דשבורד' }} />
+      <Tab.Screen name="AdminAppointments" component={AdminAppointmentsScreen} options={{ title: 'תורים' }} />
+      <Tab.Screen name="AdminBroadcast" component={AdminBroadcastScreen} options={{ title: 'הודעות' }} />
+      <Tab.Screen name="AdminServices" component={AdminServiceSettingsScreen} options={{ title: 'שירותים' }} />
+      <Tab.Screen name="AdminSettings" component={AdminSystemSettingsScreen} options={{ title: 'הגדרות' }} />
+      <Tab.Screen name="AdminUsers" component={AdminUsersScreen} options={{ title: 'משתמשים' }} />
     </Tab.Navigator>
   );
 }

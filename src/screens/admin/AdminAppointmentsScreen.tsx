@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { getAppointmentErrorMessage } from '../../utils/appointmentErrors';
 import { formatDisplayDate } from '../../utils/dateFormat';
 import {
   Appointment,
@@ -76,7 +77,7 @@ export default function AdminAppointmentsScreen() {
       );
     } catch (error) {
       console.error('Failed to update appointment status', error);
-      Alert.alert('שגיאה', 'לא הצלחנו לעדכן את סטטוס התור.');
+      Alert.alert('לא ניתן לעדכן תור', getAppointmentErrorMessage(error));
     } finally {
       setBusyAppointmentId(null);
     }
@@ -144,7 +145,7 @@ export default function AdminAppointmentsScreen() {
       </View>
 
       <View style={styles.filters}>
-        {(['all', 'pending', 'confirmed', 'cancelled'] as const).map((status) => (
+        {(['all', 'confirmed', 'cancelled'] as const).map((status) => (
           <TouchableOpacity
             key={status}
             style={[styles.filterButton, filterStatus === status && styles.filterButtonActive]}
@@ -201,15 +202,6 @@ export default function AdminAppointmentsScreen() {
                 </Text>
 
                 <View style={styles.actions}>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleStatusUpdate(item, 'confirmed')}
-                    disabled={isBusy}
-                  >
-                    <Ionicons name="checkmark-circle-outline" size={18} color="#10b981" />
-                    <Text style={[styles.actionText, styles.confirmText]}>אשר</Text>
-                  </TouchableOpacity>
-
                   <TouchableOpacity
                     style={styles.actionButton}
                     onPress={() => handleStatusUpdate(item, 'cancelled')}
@@ -313,7 +305,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a2e',
   },
   actionText: { fontSize: 13, fontWeight: 'bold' },
-  confirmText: { color: '#10b981' },
   cancelText: { color: '#f59e0b' },
   deleteText: { color: '#ef4444' },
 });

@@ -13,6 +13,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import {
+  createServiceSetting,
+  deleteServiceSetting,
   getServiceSettings,
   ServiceSetting,
   updateServiceSetting,
@@ -26,12 +28,18 @@ type EditMap = Record<
   }
 >;
 
+const DEFAULT_NEW_ICON = 'cut';
+
 export default function AdminServiceSettingsScreen() {
   const [services, setServices] = useState<ServiceSetting[]>([]);
   const [edits, setEdits] = useState<EditMap>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingType, setSavingType] = useState<string | null>(null);
+  const [newServiceName, setNewServiceName] = useState('');
+  const [newServicePrice, setNewServicePrice] = useState('');
+  const [newServiceDuration, setNewServiceDuration] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const load = async (showLoader = false) => {
     if (showLoader) {
@@ -39,7 +47,7 @@ export default function AdminServiceSettingsScreen() {
     }
 
     try {
-      const settings = await getServiceSettings();
+      const settings = await getServiceSettings(true);
       setServices(settings);
       setEdits(
         settings.reduce((accumulator, service) => {
@@ -91,10 +99,88 @@ export default function AdminServiceSettingsScreen() {
     }
   };
 
+  const handleDelete = (service: ServiceSetting) => {
+    Alert.alert(
+      'מחיקת שירות',
+      `למחוק את ${service.type}? הוא ייעלם מבחירה חדשה, אבל תורים ישנים יישארו.`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSavingType(service.type);
+              await deleteServiceSetting(service.type);
+              setServices((current) => current.filter((entry) => entry.type !== service.type));
+              setEdits((current) => {
+                const next = { ...current };
+                delete next[service.type];
+                return next;
+              });
+            } catch (error) {
+              console.error('Failed to delete service setting', error);
+              Alert.alert('שגיאה', 'לא הצלחנו למחוק את השירות.');
+            } finally {
+              setSavingType(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCreate = async () => {
+    const type = newServiceName.trim();
+    const price = Number(newServicePrice);
+    const duration = Number(newServiceDuration);
+
+    if (!type || !Number.isFinite(price) || price <= 0 || !Number.isFinite(duration) || duration <= 0) {
+      Alert.alert('שגיאה', 'יש להזין שם שירות, מחיר וזמן תקינים.');
+      return;
+    }
+
+    if (services.some((service) => service.type === type)) {
+      Alert.alert('שגיאה', 'כבר קיים שירות בשם הזה.');
+      return;
+    }
+
+    const newService: ServiceSetting = {
+      type,
+      price,
+      duration,
+      icon: DEFAULT_NEW_ICON,
+      isActive: true,
+      isDeleted: false,
+    };
+
+    try {
+      setCreating(true);
+      await createServiceSetting(newService);
+      setServices((current) => [...current, newService].sort((a, b) => a.type.localeCompare(b.type)));
+      setEdits((current) => ({
+        ...current,
+        [newService.type]: {
+          price: String(newService.price),
+          duration: String(newService.duration),
+        },
+      }));
+      setNewServiceName('');
+      setNewServicePrice('');
+      setNewServiceDuration('');
+      Alert.alert('נשמר', `השירות ${newService.type} נוסף בהצלחה.`);
+    } catch (error) {
+      console.error('Failed to create service setting', error);
+      Alert.alert('שגיאה', 'לא הצלחנו להוסיף את השירות.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>שירותים ומחירים</Text>
+        <Text style={styles.headerTitle}>שירותים</Text>
         <TouchableOpacity onPress={() => load(false)}>
           <Ionicons name="refresh-outline" size={24} color="#c9a84c" />
         </TouchableOpacity>
@@ -119,6 +205,54 @@ export default function AdminServiceSettingsScreen() {
             />
           }
           contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            <View style={styles.addCard}>
+              <Text style={styles.sectionTitle}>הוסף שירות חדש</Text>
+              <TextInput
+                style={styles.input}
+                value={newServiceName}
+                onChangeText={setNewServiceName}
+                placeholder="שם השירות"
+                placeholderTextColor="#666"
+                textAlign="right"
+              />
+
+              <View style={styles.row}>
+                <View style={styles.field}>
+                  <Text style={styles.label}>מחיר</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newServicePrice}
+                    onChangeText={setNewServicePrice}
+                    keyboardType="numeric"
+                    textAlign="right"
+                  />
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>זמן בדקות</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newServiceDuration}
+                    onChangeText={setNewServiceDuration}
+                    keyboardType="numeric"
+                    textAlign="right"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.createButton} onPress={handleCreate} disabled={creating}>
+                {creating ? (
+                  <ActivityIndicator size="small" color="#1a1a2e" />
+                ) : (
+                  <>
+                    <Ionicons name="add-outline" size={18} color="#1a1a2e" />
+                    <Text style={styles.createButtonText}>הוסף שירות</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          }
           renderItem={({ item }) => {
             const edit = edits[item.type];
             const isSaving = savingType === item.type;
@@ -129,7 +263,10 @@ export default function AdminServiceSettingsScreen() {
                   <View style={styles.iconWrap}>
                     <Ionicons name={item.icon as any} size={20} color="#c9a84c" />
                   </View>
-                  <Text style={styles.serviceName}>{item.type}</Text>
+
+                  <View style={styles.serviceHeaderText}>
+                    <Text style={styles.serviceName}>{item.type}</Text>
+                  </View>
                 </View>
 
                 <View style={styles.row}>
@@ -141,7 +278,10 @@ export default function AdminServiceSettingsScreen() {
                       onChangeText={(value) =>
                         setEdits((current) => ({
                           ...current,
-                          [item.type]: { ...current[item.type], price: value },
+                          [item.type]: {
+                            ...current[item.type],
+                            price: value,
+                          },
                         }))
                       }
                       keyboardType="numeric"
@@ -157,7 +297,10 @@ export default function AdminServiceSettingsScreen() {
                       onChangeText={(value) =>
                         setEdits((current) => ({
                           ...current,
-                          [item.type]: { ...current[item.type], duration: value },
+                          [item.type]: {
+                            ...current[item.type],
+                            duration: value,
+                          },
                         }))
                       }
                       keyboardType="numeric"
@@ -166,20 +309,31 @@ export default function AdminServiceSettingsScreen() {
                   </View>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.saveButton}
-                  onPress={() => handleSave(item)}
-                  disabled={isSaving}
-                >
-                  {isSaving ? (
-                    <ActivityIndicator size="small" color="#1a1a2e" />
-                  ) : (
-                    <>
-                      <Ionicons name="save-outline" size={18} color="#1a1a2e" />
-                      <Text style={styles.saveButtonText}>שמור שינויי שירות</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity
+                    style={[styles.deleteButton, isSaving && styles.deleteButtonDisabled]}
+                    onPress={() => handleDelete(item)}
+                    disabled={isSaving}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    <Text style={styles.deleteButtonText}>מחק</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.saveButton}
+                    onPress={() => handleSave(item)}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <ActivityIndicator size="small" color="#1a1a2e" />
+                    ) : (
+                      <>
+                        <Ionicons name="save-outline" size={18} color="#1a1a2e" />
+                        <Text style={styles.saveButtonText}>שמור שינויים</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             );
           }}
@@ -203,6 +357,15 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: 14 },
+  addCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a4a',
+  },
+  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
   card: {
     backgroundColor: '#16213e',
     borderRadius: 14,
@@ -220,6 +383,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  serviceHeaderText: { flex: 1 },
   serviceName: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   row: { flexDirection: 'row', gap: 10 },
   field: { flex: 1 },
@@ -234,8 +398,34 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
   },
-  saveButton: {
+  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  deleteButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 14,
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#ef444411',
+  },
+  deleteButtonDisabled: { opacity: 0.6 },
+  deleteButtonText: { color: '#ef4444', fontSize: 15, fontWeight: 'bold' },
+  createButton: {
     marginTop: 14,
+    backgroundColor: '#c9a84c',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  createButtonText: { color: '#1a1a2e', fontSize: 14, fontWeight: 'bold' },
+  saveButton: {
+    flex: 1,
     backgroundColor: '#c9a84c',
     borderRadius: 10,
     paddingVertical: 12,

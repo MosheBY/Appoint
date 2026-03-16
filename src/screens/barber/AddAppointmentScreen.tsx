@@ -1,31 +1,48 @@
 import React, { useEffect, useState } from 'react';
 import { CALENDAR_THEME, todayString } from '../../constants';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Alert, ActivityIndicator,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import { useAuth } from '../../context/AuthContext';
+import { getAppointmentErrorMessage } from '../../utils/appointmentErrors';
 import { createAppointment, ServiceType, getAvailableSlots } from '../../services/appointmentService';
-
-const SERVICES: ServiceType[] = ['תספורת', 'זקן', 'תספורת + זקן'];
+import { getServiceSettings, ServiceSetting } from '../../services/serviceSettingsService';
 
 export default function AddAppointmentScreen({ navigation }: any) {
   const { user } = useAuth();
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [service, setService] = useState<ServiceType>('תספורת');
+  const [services, setServices] = useState<ServiceSetting[]>([]);
+  const [service, setService] = useState<ServiceType>('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [notes, setNotes] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
   const [slots, setSlots] = useState<string[]>([]);
+  const [loadingServices, setLoadingServices] = useState(true);
   const [saving, setSaving] = useState(false);
   const today = todayString();
 
   useEffect(() => {
-    if (!date || !user) return;
+    getServiceSettings()
+      .then((settings) => {
+        setServices(settings);
+        setService((current) => current || settings[0]?.type || '');
+      })
+      .finally(() => setLoadingServices(false));
+  }, []);
+
+  useEffect(() => {
+    if (!date || !user || !service) return;
 
     getAvailableSlots(user.uid, date, service)
       .then(setSlots)
@@ -36,6 +53,7 @@ export default function AddAppointmentScreen({ navigation }: any) {
   }, [date, service, user]);
 
   const handleDateSelect = async (day: any) => {
+    if (!service) return;
     setDate(day.dateString);
     setTime('');
     setShowCalendar(false);
@@ -44,8 +62,8 @@ export default function AddAppointmentScreen({ navigation }: any) {
   };
 
   const handleSave = async () => {
-    if (!customerName || !date || !time) {
-      Alert.alert('שגיאה', 'יש למלא שם לקוח, תאריך ושעה');
+    if (!customerName || !date || !time || !service) {
+      Alert.alert('שגיאה', 'יש למלא שם לקוח, שירות, תאריך ושעה');
       return;
     }
     setSaving(true);
@@ -65,12 +83,20 @@ export default function AddAppointmentScreen({ navigation }: any) {
       Alert.alert('נוצר!', 'התור נוסף בהצלחה', [
         { text: 'אישור', onPress: () => navigation.goBack() },
       ]);
-    } catch {
-      Alert.alert('שגיאה', 'יצירת תור נכשלה');
+    } catch (error) {
+      Alert.alert('לא ניתן ליצור תור', getAppointmentErrorMessage(error));
     } finally {
       setSaving(false);
     }
   };
+
+  if (loadingServices) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#c9a84c" size="large" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -84,22 +110,37 @@ export default function AddAppointmentScreen({ navigation }: any) {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.label}>שם לקוח *</Text>
-        <TextInput style={styles.input} value={customerName} onChangeText={setCustomerName}
-          placeholder="שם הלקוח" placeholderTextColor="#888" textAlign="right" />
+        <TextInput
+          style={styles.input}
+          value={customerName}
+          onChangeText={setCustomerName}
+          placeholder="שם הלקוח"
+          placeholderTextColor="#888"
+          textAlign="right"
+        />
 
         <Text style={styles.label}>טלפון</Text>
-        <TextInput style={styles.input} value={customerPhone} onChangeText={setCustomerPhone}
-          placeholder="מספר טלפון" placeholderTextColor="#888" keyboardType="phone-pad" textAlign="right" />
+        <TextInput
+          style={styles.input}
+          value={customerPhone}
+          onChangeText={setCustomerPhone}
+          placeholder="מספר טלפון"
+          placeholderTextColor="#888"
+          keyboardType="phone-pad"
+          textAlign="right"
+        />
 
         <Text style={styles.label}>שירות</Text>
         <View style={styles.optionRow}>
-          {SERVICES.map(s => (
+          {services.map((item) => (
             <TouchableOpacity
-              key={s}
-              style={[styles.option, service === s && styles.optionActive]}
-              onPress={() => setService(s)}
+              key={item.type}
+              style={[styles.option, service === item.type && styles.optionActive]}
+              onPress={() => setService(item.type)}
             >
-              <Text style={[styles.optionText, service === s && styles.optionTextActive]}>{s}</Text>
+              <Text style={[styles.optionText, service === item.type && styles.optionTextActive]}>
+                {item.type}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -121,24 +162,37 @@ export default function AddAppointmentScreen({ navigation }: any) {
         <Text style={styles.label}>שעה *</Text>
         {slots.length > 0 ? (
           <View style={styles.slotsGrid}>
-            {slots.map(s => (
+            {slots.map((slot) => (
               <TouchableOpacity
-                key={s}
-                style={[styles.slot, time === s && styles.slotActive]}
-                onPress={() => setTime(s)}
+                key={slot}
+                style={[styles.slot, time === slot && styles.slotActive]}
+                onPress={() => setTime(slot)}
               >
-                <Text style={[styles.slotText, time === s && styles.slotTextActive]}>{s}</Text>
+                <Text style={[styles.slotText, time === slot && styles.slotTextActive]}>{slot}</Text>
               </TouchableOpacity>
             ))}
           </View>
         ) : (
-          <TextInput style={styles.input} value={time} onChangeText={setTime}
-            placeholder="HH:mm (לדוגמה: 14:30)" placeholderTextColor="#888" textAlign="right" />
+          <TextInput
+            style={styles.input}
+            value={time}
+            onChangeText={setTime}
+            placeholder="HH:mm (לדוגמה: 14:30)"
+            placeholderTextColor="#888"
+            textAlign="right"
+          />
         )}
 
         <Text style={styles.label}>הערות</Text>
-        <TextInput style={[styles.input, { height: 70 }]} value={notes} onChangeText={setNotes}
-          multiline textAlign="right" placeholder="הערות נוספות..." placeholderTextColor="#888" />
+        <TextInput
+          style={[styles.input, { height: 70 }]}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          textAlign="right"
+          placeholder="הערות נוספות..."
+          placeholderTextColor="#888"
+        />
 
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
           {saving ? <ActivityIndicator color="#1a1a2e" /> : <Text style={styles.saveBtnText}>הוסף תור</Text>}
@@ -150,41 +204,70 @@ export default function AddAppointmentScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1a2e' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 54, paddingBottom: 14, backgroundColor: '#16213e',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 54,
+    paddingBottom: 14,
+    backgroundColor: '#16213e',
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   content: { padding: 16 },
   label: { color: '#c9a84c', fontSize: 13, fontWeight: 'bold', marginBottom: 8, marginTop: 14 },
   input: {
-    backgroundColor: '#16213e', borderRadius: 10, padding: 12,
-    color: '#fff', fontSize: 15, borderWidth: 1, borderColor: '#333',
+    backgroundColor: '#16213e',
+    borderRadius: 10,
+    padding: 12,
+    color: '#fff',
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   optionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   option: {
-    paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: '#16213e', borderRadius: 8, borderWidth: 1, borderColor: '#333',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#16213e',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   optionActive: { backgroundColor: '#c9a84c33', borderColor: '#c9a84c' },
   optionText: { color: '#888', fontSize: 14 },
   optionTextActive: { color: '#c9a84c', fontWeight: 'bold' },
   dateBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#16213e', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#333',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#16213e',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   dateBtnText: { color: '#fff', fontSize: 15 },
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   slot: {
-    paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: '#16213e', borderRadius: 8, borderWidth: 1, borderColor: '#333',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#16213e',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   slotActive: { backgroundColor: '#c9a84c', borderColor: '#c9a84c' },
   slotText: { color: '#fff', fontSize: 14 },
   slotTextActive: { color: '#1a1a2e', fontWeight: 'bold' },
   saveBtn: {
-    backgroundColor: '#c9a84c', borderRadius: 12, padding: 16,
-    alignItems: 'center', marginTop: 24, marginBottom: 30,
+    backgroundColor: '#c9a84c',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 30,
   },
   saveBtnText: { color: '#1a1a2e', fontWeight: 'bold', fontSize: 16 },
 });

@@ -96,7 +96,7 @@ export default function ManageAppointments({ navigation }: any) {
       </View>
 
       <View style={styles.filters}>
-        {(['all', 'pending', 'confirmed', 'cancelled'] as const).map((status) => (
+        {(['all', 'confirmed', 'cancelled'] as const).map((status) => (
           <TouchableOpacity
             key={status}
             style={[styles.filterButton, filterStatus === status && styles.filterButtonActive]}

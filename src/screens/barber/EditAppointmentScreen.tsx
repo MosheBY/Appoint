@@ -19,30 +19,40 @@ import {
   ServiceType,
   getAvailableSlots,
 } from '../../services/appointmentService';
+import { getAppointmentErrorMessage } from '../../utils/appointmentErrors';
+import { getServiceSettings, ServiceSetting } from '../../services/serviceSettingsService';
 
-const SERVICES: ServiceType[] = ['תספורת', 'זקן', 'תספורת + זקן'];
 const STATUSES: { val: AppointmentStatus; label: string; color: string }[] = [
-  { val: 'pending', label: 'ממתין', color: '#f59e0b' },
   { val: 'confirmed', label: 'מאושר', color: '#10b981' },
   { val: 'cancelled', label: 'בוטל', color: '#ef4444' },
 ];
 
 export default function EditAppointmentScreen({ route, navigation }: any) {
   const original: Appointment = route.params.appointment;
+  const [services, setServices] = useState<ServiceSetting[]>([]);
   const [service, setService] = useState<ServiceType>(original.service);
   const [date, setDate] = useState(original.date);
   const [time, setTime] = useState(original.time);
-  const [status, setStatus] = useState<AppointmentStatus>(original.status);
+  const [status, setStatus] = useState<AppointmentStatus>(
+    original.status === 'cancelled' ? 'cancelled' : 'confirmed'
+  );
   const [notes, setNotes] = useState(original.notes ?? '');
   const [customerName, setCustomerName] = useState(original.customerName);
   const [showCalendar, setShowCalendar] = useState(false);
   const [slots, setSlots] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loadingServices, setLoadingServices] = useState(true);
 
   const today = todayString();
 
   useEffect(() => {
-    if (!date) return;
+    getServiceSettings()
+      .then((settings) => setServices(settings))
+      .finally(() => setLoadingServices(false));
+  }, []);
+
+  useEffect(() => {
+    if (!date || !service) return;
 
     getAvailableSlots(original.barberId, date, service)
       .then((available) => {
@@ -79,12 +89,20 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
       Alert.alert('נשמר!', 'התור עודכן בהצלחה', [
         { text: 'אישור', onPress: () => navigation.goBack() },
       ]);
-    } catch {
-      Alert.alert('שגיאה', 'שמירה נכשלה');
+    } catch (error) {
+      Alert.alert('לא ניתן לשמור את התור', getAppointmentErrorMessage(error));
     } finally {
       setSaving(false);
     }
   };
+
+  if (loadingServices) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#c9a84c" size="large" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -121,13 +139,15 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
 
         <Text style={styles.label}>שירות</Text>
         <View style={styles.optionRow}>
-          {SERVICES.map((item) => (
+          {services.map((item) => (
             <TouchableOpacity
-              key={item}
-              style={[styles.option, service === item && styles.optionActive]}
-              onPress={() => setService(item)}
+              key={item.type}
+              style={[styles.option, service === item.type && styles.optionActive]}
+              onPress={() => setService(item.type)}
             >
-              <Text style={[styles.optionText, service === item && styles.optionTextActive]}>{item}</Text>
+              <Text style={[styles.optionText, service === item.type && styles.optionTextActive]}>
+                {item.type}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -218,6 +238,7 @@ export default function EditAppointmentScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1a2e' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

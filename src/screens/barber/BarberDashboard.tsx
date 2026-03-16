@@ -15,9 +15,9 @@ import { useAuth } from '../../context/AuthContext';
 import { formatDisplayDate, getDateKeyWithOffset } from '../../utils/dateFormat';
 import { logout } from '../../services/authService';
 import {
+  Appointment,
   getBarberAppointments,
   updateAppointment,
-  Appointment,
 } from '../../services/appointmentService';
 import { STATUS_COLOR, STATUS_LABEL, todayString } from '../../constants';
 import { DEFAULT_SERVICE_SETTINGS } from '../../services/serviceSettingsService';
@@ -61,20 +61,12 @@ export default function BarberDashboard({ navigation }: any) {
   const todayAppointments = appointments.filter(
     (appointment) => appointment.date === todayStr && appointment.status !== 'cancelled'
   );
-  const pendingCount = appointments.filter((appointment) => appointment.status === 'pending').length;
+  const activeCount = appointments.filter((appointment) => appointment.status !== 'cancelled').length;
   const totalToday = todayAppointments.reduce(
-    (sum, appointment) => sum + (appointment.price ?? DEFAULT_SERVICE_SETTINGS[appointment.service].price),
+    (sum, appointment) =>
+      sum + (appointment.price ?? DEFAULT_SERVICE_SETTINGS[appointment.service]?.price ?? 0),
     0
   );
-
-  const confirm = async (appointment: Appointment) => {
-    await updateAppointment(appointment.id!, { status: 'confirmed' });
-    setAppointments((current) =>
-      current.map((entry) =>
-        entry.id === appointment.id ? { ...entry, status: 'confirmed' } : entry
-      )
-    );
-  };
 
   const cancel = (appointment: Appointment) => {
     Alert.alert('ביטול תור', `לבטל את התור של ${appointment.customerName}?`, [
@@ -143,8 +135,8 @@ export default function BarberDashboard({ navigation }: any) {
             <Text style={styles.statLabel}>תורים היום</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statNum, styles.pendingAccent]}>{pendingCount}</Text>
-            <Text style={styles.statLabel}>ממתינים</Text>
+            <Text style={[styles.statNum, styles.activeAccent]}>{activeCount}</Text>
+            <Text style={styles.statLabel}>תורים פעילים</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={[styles.statNum, styles.moneyAccent]}>₪{totalToday}</Text>
@@ -197,19 +189,14 @@ export default function BarberDashboard({ navigation }: any) {
               </View>
 
               <View style={styles.cardRight}>
-                <View
-                  style={[styles.badge, { backgroundColor: STATUS_COLOR[appointment.status] + '22' }]}
-                >
+                <View style={[styles.badge, { backgroundColor: STATUS_COLOR[appointment.status] + '22' }]}>
                   <Text style={[styles.badgeText, { color: STATUS_COLOR[appointment.status] }]}>
                     {STATUS_LABEL[appointment.status]}
                   </Text>
                 </View>
 
-                {appointment.status === 'pending' && (
+                {appointment.status !== 'cancelled' && (
                   <View style={styles.actionRow}>
-                    <TouchableOpacity onPress={() => confirm(appointment)} style={styles.confirmBtn}>
-                      <Ionicons name="checkmark" size={18} color="#10b981" />
-                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => cancel(appointment)} style={styles.cancelBtn}>
                       <Ionicons name="close" size={18} color="#ef4444" />
                     </TouchableOpacity>
@@ -259,7 +246,7 @@ const styles = StyleSheet.create({
     borderColor: '#2a2a4a',
   },
   statNum: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-  pendingAccent: { color: '#f59e0b' },
+  activeAccent: { color: '#10b981' },
   moneyAccent: { color: '#10b981' },
   statLabel: { fontSize: 11, color: '#888', marginTop: 4, textAlign: 'center' },
   tabs: {
@@ -299,6 +286,5 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   badgeText: { fontSize: 11, fontWeight: 'bold' },
   actionRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
-  confirmBtn: { backgroundColor: '#10b98122', borderRadius: 6, padding: 6 },
   cancelBtn: { backgroundColor: '#ef444422', borderRadius: 6, padding: 6 },
 });

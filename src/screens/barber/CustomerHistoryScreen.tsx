@@ -93,7 +93,7 @@ export default function CustomerHistoryScreen({ route, navigation }: any) {
   const totalSpent = appointments
     .filter((appointment) => appointment.status === 'confirmed')
     .reduce(
-      (sum, appointment) => sum + (appointment.price ?? DEFAULT_SERVICE_SETTINGS[appointment.service].price),
+      (sum, appointment) => sum + (appointment.price ?? DEFAULT_SERVICE_SETTINGS[appointment.service]?.price ?? 0),
       0
     );
 

@@ -15,14 +15,19 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import { formatDisplayDate } from '../../utils/dateFormat';
+import { getAppointmentErrorMessage } from '../../utils/appointmentErrors';
+import { formatDisplayDate, getDateKeyWithOffset } from '../../utils/dateFormat';
 import { CALENDAR_THEME, STATUS_COLOR, STATUS_LABEL, todayString } from '../../constants';
+import { getUserProfile } from '../../services/authService';
 import {
   Appointment,
   getAvailableSlots,
   getCustomerAppointments,
   updateAppointment,
+  updateAppointmentReminderNotificationId,
 } from '../../services/appointmentService';
+import { BookingSettings, getBookingSettings } from '../../services/bookingSettingsService';
+import { cancelScheduledReminder, scheduleLocalReminder } from '../../services/notificationService';
 
 export default function MyAppointmentsScreen() {
   const { user } = useAuth();
@@ -35,14 +40,27 @@ export default function MyAppointmentsScreen() {
   const [slots, setSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [savingChange, setSavingChange] = useState(false);
+  const [maxBookingDate, setMaxBookingDate] = useState(todayString());
+  const [bookingSettings, setBookingSettings] = useState<BookingSettings | null>(null);
 
   const today = todayString();
+  const minBookingDate = bookingSettings?.allowSameDayBooking ? today : getDateKeyWithOffset(1);
+  const calendarMaxDate =
+    editingAppointment && editingAppointment.date > maxBookingDate
+      ? editingAppointment.date
+      : maxBookingDate;
 
   const load = async () => {
     if (!user) return;
+
     try {
-      const data = await getCustomerAppointments(user.uid);
-      setAppointments(data);
+      const [appointmentsData, settings] = await Promise.all([
+        getCustomerAppointments(user.uid),
+        getBookingSettings(),
+      ]);
+      setAppointments(appointmentsData);
+      setBookingSettings(settings);
+      setMaxBookingDate(settings.bookingWindowEndDate);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -56,19 +74,30 @@ export default function MyAppointmentsScreen() {
   );
 
   const handleCancel = (appointment: Appointment) => {
+    if (!bookingSettings?.allowCustomerCancellation) {
+      Alert.alert('ביטול לא זמין', 'כרגע אי אפשר לבטל תורים דרך האפליקציה.');
+      return;
+    }
+
     Alert.alert(
       'ביטול תור',
-      `לבטל את התור ל${formatDisplayDate(appointment.date)} בשעה ${appointment.time}?`,
+      `לבטל את התור ל-${formatDisplayDate(appointment.date)} בשעה ${appointment.time}?`,
       [
         { text: 'חזור', style: 'cancel' },
         {
           text: 'בטל תור',
           style: 'destructive',
           onPress: async () => {
+            if (appointment.reminderNotificationId) {
+              await cancelScheduledReminder(appointment.reminderNotificationId).catch(() => undefined);
+            }
             await updateAppointment(appointment.id!, { status: 'cancelled' }, false);
+            await updateAppointmentReminderNotificationId(appointment.id!, '');
             setAppointments((current) =>
               current.map((entry) =>
-                entry.id === appointment.id ? { ...entry, status: 'cancelled' } : entry
+                entry.id === appointment.id
+                  ? { ...entry, status: 'cancelled', reminderNotificationId: '' }
+                  : entry
               )
             );
           },
@@ -98,6 +127,11 @@ export default function MyAppointmentsScreen() {
   };
 
   const openReschedule = async (appointment: Appointment) => {
+    if (!bookingSettings?.allowCustomerReschedule) {
+      Alert.alert('שינוי לא זמין', 'כרגע אי אפשר לשנות תורים דרך האפליקציה.');
+      return;
+    }
+
     setEditingAppointment(appointment);
     setSelectedDate(appointment.date);
     setSelectedTime(appointment.time);
@@ -113,12 +147,16 @@ export default function MyAppointmentsScreen() {
 
   const saveReschedule = async () => {
     if (!editingAppointment || !selectedDate || !selectedTime) {
-      Alert.alert('שגיאה', 'יש לבחור תאריך ושעה חדשים');
+      Alert.alert('שגיאה', 'יש לבחור תאריך ושעה חדשים.');
       return;
     }
 
     setSavingChange(true);
     try {
+      if (editingAppointment.reminderNotificationId) {
+        await cancelScheduledReminder(editingAppointment.reminderNotificationId).catch(() => undefined);
+      }
+
       await updateAppointment(
         editingAppointment.id!,
         {
@@ -129,19 +167,43 @@ export default function MyAppointmentsScreen() {
         false
       );
 
+      let reminderNotificationId = '';
+      try {
+        const barber = await getUserProfile(editingAppointment.barberId);
+        reminderNotificationId = await scheduleLocalReminder(
+          editingAppointment.id!,
+          selectedDate,
+          selectedTime,
+          editingAppointment.service,
+          user?.name ?? editingAppointment.customerName,
+          barber?.name ?? 'הספר',
+          bookingSettings?.reminderLeadTimeMinutes ?? 120
+        );
+      } catch (error) {
+        console.warn('Failed to reschedule local reminder', error);
+      }
+
+      await updateAppointmentReminderNotificationId(editingAppointment.id!, reminderNotificationId);
+
       setAppointments((current) =>
         current.map((entry) =>
           entry.id === editingAppointment.id
-            ? { ...entry, date: selectedDate, time: selectedTime, status: 'confirmed' }
+            ? {
+                ...entry,
+                date: selectedDate,
+                time: selectedTime,
+                status: 'confirmed',
+                reminderNotificationId,
+              }
             : entry
         )
       );
 
       closeReschedule();
-      Alert.alert('הצלחנו', 'התור עודכן בהצלחה');
+      Alert.alert('הצלחנו', 'התור עודכן בהצלחה.');
     } catch (error) {
       console.error('Failed to reschedule appointment', error);
-      Alert.alert('שגיאה', 'לא הצלחנו לשנות את התור, נסה שוב');
+      Alert.alert('לא ניתן לשנות תור', getAppointmentErrorMessage(error));
     } finally {
       setSavingChange(false);
     }
@@ -199,14 +261,18 @@ export default function MyAppointmentsScreen() {
                 <Text style={styles.detail}>{item.time}</Text>
               </View>
 
-              {(item.status === 'pending' || item.status === 'confirmed') && (
+              {item.status !== 'cancelled' && (
                 <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.editButton} onPress={() => openReschedule(item)}>
-                    <Text style={styles.editButtonText}>שנה תור</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.cancelButton} onPress={() => handleCancel(item)}>
-                    <Text style={styles.cancelButtonText}>בטל תור</Text>
-                  </TouchableOpacity>
+                  {bookingSettings?.allowCustomerReschedule && (
+                    <TouchableOpacity style={styles.editButton} onPress={() => openReschedule(item)}>
+                      <Text style={styles.editButtonText}>שנה תור</Text>
+                    </TouchableOpacity>
+                  )}
+                  {bookingSettings?.allowCustomerCancellation && (
+                    <TouchableOpacity style={styles.cancelButton} onPress={() => handleCancel(item)}>
+                      <Text style={styles.cancelButtonText}>בטל תור</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
             </View>
@@ -227,7 +293,8 @@ export default function MyAppointmentsScreen() {
             <ScrollView>
               <Text style={styles.modalLabel}>בחר תאריך חדש</Text>
               <Calendar
-                minDate={today}
+                minDate={minBookingDate}
+                maxDate={calendarMaxDate}
                 onDayPress={(day: { dateString: string }) => {
                   if (!editingAppointment) return;
                   setSelectedDate(day.dateString);
@@ -303,7 +370,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a4a',
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   service: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   badgeText: { fontSize: 12, fontWeight: 'bold' },
@@ -343,7 +415,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a4a',
   },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   modalLabel: { color: '#c9a84c', fontSize: 15, fontWeight: 'bold', marginTop: 8, marginBottom: 10 },
   loader: { marginVertical: 20 },
